@@ -1,4 +1,4 @@
-# starbook
+# starbook-bash
 
 Bash control for a **Vixen Starbook (original, fw 2.7B50)** driving a Vixen Sphinx mount, from a Raspberry Pi 5.
 
