@@ -90,7 +90,8 @@ do_reset() {
 }
 
 # ---- Starbook screen in the terminal -------------------------------------------------
-# getscreen.bin: 320x240, 12-bit colour, 2 pixels per 3 bytes [R1 G1][B1 R2][G2 B2] (4 bits each),
+# getscreen.bin: 320x240, 12-bit colour, 2 pixels per 3 bytes, low nibble first:
+#   byte0 = G1<<4|R1, byte1 = R2<<4|B1, byte2 = B2<<4|G2 (4 bits each),
 # sent with no HTTP header (needs curl --http0.9).
 # Two ways to draw it:
 #   kitty  - real pixels via the Kitty graphics protocol (Ghostty, kitty, WezTerm, Konsole): sharp
@@ -112,8 +113,8 @@ draw_kitty() {   # $1 = frame file, $2 = columns
   od -An -v -tu1 "$1" | LC_ALL=C awk '
     { for (i = 1; i <= NF; i++) b[n++] = $i }
     END { for (k = 0; k < n; k += 3) {
-            printf "%c%c%c", int(b[k] / 16) * 17, (b[k] % 16) * 17, int(b[k+1] / 16) * 17
-            printf "%c%c%c", (b[k+1] % 16) * 17, int(b[k+2] / 16) * 17, (b[k+2] % 16) * 17 } }' |
+            printf "%c%c%c", (b[k] % 16) * 17, int(b[k] / 16) * 17, (b[k+1] % 16) * 17
+            printf "%c%c%c", int(b[k+1] / 16) * 17, (b[k+2] % 16) * 17, int(b[k+2] / 16) * 17 } }' |
     base64 -w0 | fold -w 4096 | awk -v c="$2" '
       function send(chunk, more) {
         if (first) printf "\033_Gf=24,s=320,v=240,a=T,q=2,c=%d,m=%d;%s\033\\", c, more, chunk
@@ -132,8 +133,8 @@ draw_blocks() {   # $1 = frame file, $2 = columns (2..320)
     END {
       for (p = 0; p < 76800; p++) {                 # decode 12-bit pixels
         k = int(p / 2) * 3
-        if (p % 2 == 0) { r = int(b[k] / 16); g = b[k] % 16; bl = int(b[k+1] / 16) }
-        else            { r = b[k+1] % 16; g = int(b[k+2] / 16); bl = b[k+2] % 16 }
+        if (p % 2 == 0) { r = b[k] % 16; g = int(b[k] / 16); bl = b[k+1] % 16 }
+        else            { r = int(b[k+1] / 16); g = b[k+2] % 16; bl = int(b[k+2] / 16) }
         R[p] = r * 17; G[p] = g * 17; B[p] = bl * 17
       }
       s = 320 / cols; h = int(240 / s); if (h % 2) h--  # image rows after scaling (even)
