@@ -1,0 +1,21 @@
+# Targets for "sb.sh star NAME".
+# One per line:  NAME  RA_hours  DEC_degrees   (decimal, J2000)
+#   - NAME is one word, matched without regard to case (use _ instead of spaces, e.g. Andromeda_Galaxy)
+#   - RA in hours 0-24, DEC in degrees -90..+90 (negative = south)
+#   - lines starting with # and blank lines are ignored
+# Convert h:m:s / d:m:s with:  RA_hours = h + m/60 + s/3600,  DEC = d + m/60 + s/3600 (keep the sign)
+
+Vega        18.6156   38.7837
+Deneb       20.6905   45.2803
+Altair      19.8464    8.8683
+Arcturus    14.2610   19.1824
+Capella      5.2782   45.9980
+Polaris      2.5302   89.2641
+Sirius       6.7525  -16.7161
+Betelgeuse   5.9195    7.4071
+Rigel        5.2423   -8.2016
+Aldebaran    4.5987   16.5093
+Antares     16.4901  -26.4320
+Spica       13.4199  -11.1613
+Regulus     10.1395   11.9672
+Fomalhaut   22.9608  -29.6222

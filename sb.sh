@@ -8,7 +8,8 @@
 #   sb.sh homed            confirm the mount is at home (after init away from home, or a power cut)
 #   sb.sh unpark           leave INIT/park and enter Scope mode        (no motion)
 #   sb.sh goto RA DEC      slew; RA in hours, DEC in degrees, e.g. goto 0.712 41.27   (MOVES)
-#   sb.sh star NAME        slew to a bright star (e.g. Vega), watch it, auto-abort  (MOVES)
+#   sb.sh star NAME        slew to a star from stars.txt (e.g. Vega), watch it, auto-abort  (MOVES)
+#   sb.sh stars            list the stars in stars.txt
 #   sb.sh nudge N|S|E|W SEC [SPEED]  short move to centre a star (1-8, default 3)  (MOVES)
 #   sb.sh align            last GoTo target is now centred -> add alignment star
 #   sb.sh init             reset to INIT where it is: both motors stop     (no motion)
@@ -23,6 +24,7 @@ IFACE=enx6c5ab0b3b739
 SB=http://169.254.1.1
 LOG=/tmp/indiserver-starbook.log
 NOTHOME=$HOME/starbook/.not_at_home   # set when the Starbook no longer knows the mount is at home
+STARS=${SB_STARS:-$(dirname "$SELF")/stars.txt}   # star list for "star NAME"; override with SB_STARS=file
 
 get() { indi_getprop -t 3 -1 "$DEV.$1" 2>/dev/null; }
 set_() { indi_setprop "$DEV.$1"; }
@@ -122,22 +124,20 @@ case "$1" in
     r=$(sbq "GOTORADEC?$q")
     echo "GOTORADEC?$q -> $r  (abort: $0 abort)"
     [[ "$r" == OK* ]] ;;
+  stars)
+    # List the targets in the star file
+    [ -r "$STARS" ] || { echo "star file not found: $STARS"; exit 1; }
+    echo "targets in $STARS:"
+    awk '{ sub(/\r$/, "") } !/^[[:space:]]*(#|$)/ { printf "  %-14s RA %8.4f h   DEC %+8.4f deg\n", $1, $2, $3 }' "$STARS" ;;
   star)
-    # Slew to a named bright star and watch the slew; aborts after 180 s.   (MOVES)
-    [ $# -eq 2 ] || { echo "usage: $0 star NAME   (Vega Deneb Altair Arcturus Capella Polaris Sirius Betelgeuse Rigel Aldebaran Antares Spica Regulus Fomalhaut)"; exit 1; }
-    # RA (hours) and Dec (degrees), J2000
-    case "$(echo "$2" | tr A-Z a-z)" in
-      vega) radec="18.6156 38.7837" ;;       deneb) radec="20.6905 45.2803" ;;
-      altair) radec="19.8464 8.8683" ;;      arcturus) radec="14.2610 19.1824" ;;
-      capella) radec="5.2782 45.9980" ;;     polaris) radec="2.5302 89.2641" ;;
-      sirius) radec="6.7525 -16.7161" ;;     betelgeuse) radec="5.9195 7.4071" ;;
-      rigel) radec="5.2423 -8.2016" ;;       aldebaran) radec="4.5987 16.5093" ;;
-      antares) radec="16.4901 -26.4320" ;;   spica) radec="13.4199 -11.1613" ;;
-      regulus) radec="10.1395 11.9672" ;;    fomalhaut) radec="22.9608 -29.6222" ;;
-      *) radec="" ;;
-    esac
-    [ -n "$radec" ] || { echo "unknown star: $2"; exit 1; }
+    # Slew to a target from the star file and watch the slew; aborts after 180 s.   (MOVES)
+    [ -r "$STARS" ] || { echo "star file not found: $STARS"; exit 1; }
+    [ $# -eq 2 ] || { echo "usage: $0 star NAME   (see '$0 stars' for the list in $STARS)"; exit 1; }
+    radec=$(awk -v n="$2" '{ sub(/\r$/, "") } !/^[[:space:]]*(#|$)/ && tolower($1) == tolower(n) { print $2, $3; exit }' "$STARS")
+    [ -n "$radec" ] || { echo "unknown star: $2 (not in $STARS - see '$0 stars')"; exit 1; }
     read -r ra dec <<<"$radec"
+    awk -v ra="$ra" -v dec="$dec" 'BEGIN { exit !(ra + 0 == ra && dec + 0 == dec && ra >= 0 && ra < 24 && dec >= -90 && dec <= 90) }' \
+      || { echo "bad coordinates for $2 in $STARS: RA=$ra DEC=$dec (RA 0-24 h, DEC -90..90 deg)"; exit 1; }
     guard
     echo "$2: RA $ra h, DEC $dec deg  (the Starbook refuses targets below its horizon)"
     [[ "$(st)" == *STATE=SCOPE* ]] || "$SELF" unpark >/dev/null
@@ -198,5 +198,5 @@ case "$1" in
   indi-stop)
     set_ 'CONNECTION.DISCONNECT=On' 2>/dev/null; sleep 1; pkill -x indiserver; echo "indiserver stopped" ;;
   *)
-    sed -n '2,19p' "$SELF" | sed 's/^# \{0,1\}//' ;;
+    sed -n '2,20p' "$SELF" | sed 's/^# \{0,1\}//' ;;
 esac

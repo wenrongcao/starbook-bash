@@ -76,6 +76,7 @@ Run `bash sb.sh` with no arguments to print this list.
 | `status` | Show state (INIT/SCOPE/CHART/USER, and "slewing" during a GoTo), RA/Dec, encoder counts, the Starbook's clock next to the Pi's, firmware, the not-at-home flag, and whether INDI is running |
 | `settime` | Set the Starbook's clock from the Pi. Only works in INIT (the startup screen) |
 | `reset [-y]` | Reset everything: stop INDI, wait for the Starbook, reset it to INIT, set the clock, clear the not-at-home flag. Asks you to confirm the mount is at home; `-y` skips the question |
+| `stars` | List the targets in `stars.txt` |
 | `homed` | Confirm the mount is at home after moving it there by hand (clears the not-at-home flag) |
 | `unpark` | Leave INIT and enter Scope mode (`START`). The RA motor starts tracking; nothing slews. Assumes the mount is at home |
 | `init` | Reset to INIT where the mount is: both motors stop. If the mount is more than 1° from home, sets the not-at-home flag |
@@ -84,7 +85,7 @@ Run `bash sb.sh` with no arguments to print this list.
 
 | Command | What it does |
 |---|---|
-| `star NAME` | Slew to a named bright star and watch the slew until it arrives; aborts after 180 s. Names: Vega, Deneb, Altair, Arcturus, Capella, Polaris, Sirius, Betelgeuse, Rigel, Aldebaran, Antares, Spica, Regulus, Fomalhaut |
+| `star NAME` | Slew to a target from `stars.txt` and watch the slew until it arrives; aborts after 180 s. The name is matched without regard to case |
 | `goto RA DEC` | Slew to coordinates: RA in hours, Dec in degrees, e.g. `goto 0.712 41.27`. Returns immediately (use `status` to follow it) |
 | `nudge N\|S\|E\|W SEC [SPEED]` | Short manual move to centre a star: up to 10 s, speed 1-8 (default 3) |
 | `park` | Slew to the home position and watch the slew. Tracking continues at home; follow with `init` to stop the motors |
@@ -105,6 +106,19 @@ Run `bash sb.sh` with no arguments to print this list.
 
 Commands that slew refuse to run while the not-at-home flag is set (after a power cut during a slew,
 or `init` away from home). Move the mount home by hand, then run `homed` or `reset`.
+
+**Star list (`stars.txt`)**
+
+`star NAME` looks targets up in `stars.txt`, next to `sb.sh`. Edit it to add or change targets:
+one per line, `NAME  RA_hours  DEC_degrees` (decimal, J2000); `#` starts a comment.
+
+```
+# NAME        RA_hours  DEC_degrees
+Vega          18.6156   38.7837
+Andromeda_Galaxy  0.7123  41.2692
+```
+
+Names are one word (use `_` for spaces). To use a different file: `SB_STARS=/path/to/list.txt bash sb.sh star NAME`.
 
 **Typical session**
 
