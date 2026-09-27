@@ -125,27 +125,29 @@ case "$1" in
   star)
     # Slew to a named bright star and watch the slew; aborts after 180 s.   (MOVES)
     [ $# -eq 2 ] || { echo "usage: $0 star NAME   (Vega Deneb Altair Arcturus Capella Polaris Sirius Betelgeuse Rigel Aldebaran Antares Spica Regulus Fomalhaut)"; exit 1; }
-    read -r ra dec alt < <(/usr/bin/python3 - "$2" <<'EOF'
-import math, sys, datetime
-stars = {"vega": (18.6156, 38.7837), "deneb": (20.6905, 45.2803), "altair": (19.8464, 8.8683),
-         "arcturus": (14.2610, 19.1824), "capella": (5.2782, 45.9980), "polaris": (2.5302, 89.2641),
-         "sirius": (6.7525, -16.7161), "betelgeuse": (5.9195, 7.4071), "rigel": (5.2423, -8.2016),
-         "aldebaran": (4.5987, 16.5093), "antares": (16.4901, -26.4320), "spica": (13.4199, -11.1613),
-         "regulus": (10.1395, 11.9672), "fomalhaut": (22.9608, -29.6222)}
-name = sys.argv[1].lower()
-if name not in stars:
-    sys.exit(1)
-ra, dec = stars[name]
-lat, lon = 39 + 28 / 60, -(119 + 49 / 60)          # site from the Starbook (GETPLACE)
-d = datetime.datetime.now(datetime.timezone.utc).timestamp() / 86400 + 2440587.5 - 2451545.0
-lst = (18.697374558 + 24.06570982441908 * d + lon / 15) % 24
-ha = math.radians((lst - ra) * 15)
-alt = math.degrees(math.asin(math.sin(math.radians(lat)) * math.sin(math.radians(dec)) +
-                             math.cos(math.radians(lat)) * math.cos(math.radians(dec)) * math.cos(ha)))
-print(ra, dec, round(alt, 1))
-EOF
-)
-    [ -n "$ra" ] || { echo "unknown star: $2"; exit 1; }
+    # RA (hours) and Dec (degrees), J2000
+    case "$(echo "$2" | tr A-Z a-z)" in
+      vega) radec="18.6156 38.7837" ;;       deneb) radec="20.6905 45.2803" ;;
+      altair) radec="19.8464 8.8683" ;;      arcturus) radec="14.2610 19.1824" ;;
+      capella) radec="5.2782 45.9980" ;;     polaris) radec="2.5302 89.2641" ;;
+      sirius) radec="6.7525 -16.7161" ;;     betelgeuse) radec="5.9195 7.4071" ;;
+      rigel) radec="5.2423 -8.2016" ;;       aldebaran) radec="4.5987 16.5093" ;;
+      antares) radec="16.4901 -26.4320" ;;   spica) radec="13.4199 -11.1613" ;;
+      regulus) radec="10.1395 11.9672" ;;    fomalhaut) radec="22.9608 -29.6222" ;;
+      *) radec="" ;;
+    esac
+    [ -n "$radec" ] || { echo "unknown star: $2"; exit 1; }
+    # altitude now, from local sidereal time; site from the Starbook (GETPLACE: N39 28, W119 49)
+    read -r ra dec alt < <(awk -v t="$(date +%s)" -v radec="$radec" 'BEGIN {
+      split(radec, a, " "); ra = a[1]; dec = a[2]
+      pi = atan2(0, -1); r = pi / 180
+      lat = 39 + 28 / 60; lon = -(119 + 49 / 60)
+      d = t / 86400 + 2440587.5 - 2451545.0                   # days since J2000
+      lst = (18.697374558 + 24.06570982441908 * d + lon / 15) % 24
+      ha = (lst - ra) * 15 * r
+      x = sin(lat * r) * sin(dec * r) + cos(lat * r) * cos(dec * r) * cos(ha)
+      alt = atan2(x, sqrt(1 - x * x)) / r                     # asin(x)
+      printf "%s %s %.1f\n", ra, dec, alt }')
     guard
     echo "$2: RA $ra h, DEC $dec deg, altitude $alt deg"
     awk "BEGIN{exit !($alt < 20)}" && { echo "too low (< 20 deg) - not slewing"; exit 1; }

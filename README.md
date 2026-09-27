@@ -16,13 +16,12 @@ Tested on Ubuntu 24.04 (Raspberry Pi 5).
 | Package | Provides | Used for |
 |---|---|---|
 | `curl` | `curl` | every command sent to the Starbook |
-| `python3-minimal` | `/usr/bin/python3` | `star`: star catalogue and altitude check |
-| `gawk` (or any awk), `sed`, `grep`, `coreutils` | text handling, `readlink`, `date`, `seq` | throughout |
+| `gawk` or `mawk` (any awk), `sed`, `grep`, `coreutils` | text handling, `readlink`, `date`, `seq`; awk also does the floating-point maths (star altitude, coordinate formatting) | throughout |
 | `procps` | `pgrep`, `pkill` | checking/stopping `indiserver` |
 | `iproute2` | `ip` | `start`: checks the adapter's 169.254 address |
 
 ```
-sudo apt install curl python3-minimal gawk procps iproute2
+sudo apt install curl gawk procps iproute2
 ```
 
 **Optional: INDI**, only for `sb.sh start` / `sb.sh stop` and for driving the mount from
