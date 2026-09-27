@@ -14,6 +14,8 @@
 #   sb.sh align            last GoTo target is now centred -> add alignment star
 #   sb.sh init             reset to INIT where it is: both motors stop     (no motion)
 #   sb.sh reset [-y]       reset everything: INDI off, INIT, clock set, not-at-home flag cleared (mount must be home)
+#   sb.sh screen [COLS]    show the Starbook screen in the terminal (24-bit colour)
+#   sb.sh watch [SEC]      redraw the Starbook screen every SEC seconds (default 5), Ctrl-C quits
 #   sb.sh abort            stop all motion
 #   sb.sh park             go to home position and watch the slew       (MOVES)
 #   sb.sh indi-stop        disconnect and shut down the INDI server
@@ -86,7 +88,63 @@ do_reset() {
   echo "WARNING: encoders changed or no reply"; return 1
 }
 
+# Draw the Starbook's 320x240 screen in the terminal: half blocks (upper = fg, lower = bg)
+# in 24-bit colour. $1 = width in columns (2..320). The screen is 12-bit colour, 2 pixels
+# per 3 bytes: [R1 G1][B1 R2][G2 B2] (4 bits each). Each character cell averages a box.
+draw_screen() {
+  local cols=$1 tmp
+  tmp=$(mktemp) || return 1
+  curl -s --http0.9 -m 30 -o "$tmp" "$SB/getscreen.bin"
+  if [ "$(stat -c %s "$tmp" 2>/dev/null)" != 115200 ]; then rm -f "$tmp"; echo "could not read the Starbook screen"; return 1; fi
+  od -An -v -tu1 "$tmp" | awk -v cols="$cols" '
+    { for (i = 1; i <= NF; i++) b[n++] = $i }
+    END {
+      for (p = 0; p < 76800; p++) {                 # decode 12-bit pixels
+        k = int(p / 2) * 3
+        if (p % 2 == 0) { r = int(b[k] / 16); g = b[k] % 16; bl = int(b[k+1] / 16) }
+        else            { r = b[k+1] % 16; g = int(b[k+2] / 16); bl = b[k+2] % 16 }
+        R[p] = r * 17; G[p] = g * 17; B[p] = bl * 17
+      }
+      s = 320 / cols; h = int(240 / s); if (h % 2) h--  # image rows after scaling (even)
+      for (y = 0; y < h; y += 2) {
+        line = ""; last = ""
+        for (x = 0; x < cols; x++) {
+          for (half = 0; half < 2; half++) {        # average the box under each half cell
+            x0 = int(x * s); x1 = int((x + 1) * s); if (x1 <= x0) x1 = x0 + 1
+            y0 = int((y + half) * s); y1 = int((y + half + 1) * s); if (y1 <= y0) y1 = y0 + 1
+            sr = sg = sb = cnt = 0
+            for (yy = y0; yy < y1 && yy < 240; yy++) for (xx = x0; xx < x1 && xx < 320; xx++) {
+              q = yy * 320 + xx; sr += R[q]; sg += G[q]; sb += B[q]; cnt++ }
+            c[half] = int(sr / cnt) ";" int(sg / cnt) ";" int(sb / cnt)
+          }
+          col = c[0] "|" c[1]
+          if (col != last) { line = line "\033[38;2;" c[0] "m\033[48;2;" c[1] "m"; last = col }
+          line = line "\342\226\200"                # U+2580 upper half block
+        }
+        print line "\033[0m"
+      }
+    }'
+  rm -f "$tmp"
+}
+
 case "$1" in
+  screen)
+    # Show the Starbook's screen in the terminal. Optional width in columns (default: terminal width).
+    cols=${2:-$(tput cols 2>/dev/null || echo 80)}
+    [[ "$cols" =~ ^[0-9]+$ ]] || { echo "usage: $0 screen [COLUMNS]"; exit 1; }
+    [ "$cols" -gt 320 ] && cols=320; [ "$cols" -lt 2 ] && cols=2
+    draw_screen "$cols" ;;
+  watch)
+    # Redraw the Starbook's screen every SEC seconds (default 5) until Ctrl-C.
+    sec=${2:-5}; [[ "$sec" =~ ^[0-9]+$ ]] && [ "$sec" -ge 1 ] || { echo "usage: $0 watch [SECONDS]"; exit 1; }
+    trap 'printf "\033[0m\033[?25h\n"; exit 0' INT TERM
+    printf '\033[?25l\033[2J'
+    while :; do
+      cols=$(tput cols 2>/dev/null || echo 80); [ "$cols" -gt 320 ] && cols=320
+      out=$(draw_screen "$cols")
+      printf '\033[H%s\n\033[0m%s  (every %ss, Ctrl-C to quit)\033[K' "$out" "$(date +%T)" "$sec"
+      sleep "$sec"
+    done ;;
   indi-start)
     ip -br addr show "$IFACE" 2>/dev/null | grep -q 169.254.1.2 \
       || { echo "169.254.1.2 is not on $IFACE - run: sudo ip addr add 169.254.1.2/16 dev $IFACE"; exit 1; }
@@ -215,5 +273,5 @@ case "$1" in
   indi-stop)
     set_ 'CONNECTION.DISCONNECT=On' 2>/dev/null; sleep 1; pkill -x indiserver; echo "indiserver stopped" ;;
   *)
-    sed -n '2,20p' "$SELF" | sed 's/^# \{0,1\}//' ;;
+    sed -n '2,21p' "$SELF" | sed 's/^# \{0,1\}//' ;;
 esac

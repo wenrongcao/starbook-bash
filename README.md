@@ -79,6 +79,8 @@ Run `bash sb.sh` with no arguments to print this list.
 | `stars` | List the targets in `stars.txt` |
 | `homed` | Confirm the mount is at home after moving it there by hand (clears the not-at-home flag) |
 | `unpark` | Leave INIT and enter Scope mode (`START`). The RA motor starts tracking; nothing slews. Assumes the mount is at home |
+| `screen [COLS]` | Show the Starbook's screen in the terminal (24-bit colour half blocks), e.g. over SSH. Width defaults to the terminal width; 160+ columns makes the text readable, 320 is pixel-perfect |
+| `watch [SEC]` | Redraw the Starbook's screen every SEC seconds (default 5) as a live view; Ctrl-C quits |
 | `init` | Reset to INIT where the mount is: both motors stop. If the mount is more than 1° from home, sets the not-at-home flag |
 
 **Motion** (the mount moves)
@@ -141,6 +143,10 @@ bash sb.sh init           # both motors stop
   The Starbook refuses GoTos below its horizon (`ERROR:BELOW HORIZONE`), but that check uses its own
   clock, so run `sb.sh reset` or `sb.sh settime` after every power-up before slewing.
 - `ALIGN` ignores coordinates and only syncs to the last GoTo target.
+- Speed and chart zoom are the same setting (`SETSPEED` 0-8). After a restart it is at the widest
+  zoom, where all labels are drawn on top of each other and look like garbled text; `SETSPEED?speed=6`
+  gives a normal chart. `getscreen.bin` returns the 320x240 12-bit screen with no HTTP header
+  (`curl --http0.9`).
 
 ## License
 
