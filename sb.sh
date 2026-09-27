@@ -7,7 +7,7 @@
 #   sb.sh settime          set Starbook clock from the Pi (Starbook must be at INIT screen)
 #   sb.sh homed            confirm the mount is at home (after init away from home, or a power cut)
 #   sb.sh unpark           leave INIT/park and enter Scope mode        (no motion)
-#   sb.sh goto RA DEC      slew; RA in hours, DEC in degrees, e.g. goto 0.712 41.27   (MOVES)
+#   sb.sh goto RA DEC      slew; RA hh:mm:ss, DEC ±dd:mm:ss, e.g. goto 00:42:44 +41:16:09  (MOVES)
 #   sb.sh star NAME        slew to a star from stars.txt (e.g. Vega), watch it, auto-abort  (MOVES)
 #   sb.sh stars            list the stars in stars.txt
 #   sb.sh nudge N|S|E|W SEC [SPEED]  short move to centre a star (1-8, default 3)  (MOVES)
@@ -33,6 +33,20 @@ st() { sbq GETSTATUS.ASP; }
 xy() { sbq GETXY.ASP | sed -E 's/X=(-?[0-9]+)&Y=(-?[0-9]+)/\1 \2/'; }  # prints "X Y"
 guard() { [ -e "$NOTHOME" ] && { echo "REFUSED: mount may not be at home ($(cat "$NOTHOME")). Move it home by hand, then: $0 homed"; exit 1; }; }
 move() { sbq "MOVE?NORTH=${1:-0}&SOUTH=${2:-0}&EAST=${3:-0}&WEST=${4:-0}" >/dev/null; }
+
+# Convert "hh:mm:ss" / "±dd:mm:ss" (or "hh:mm", or decimal) to decimal. $1 value, $2 max (24 or 90).
+# Prints the decimal value, or nothing if the value is malformed or out of range.
+todec() {
+  awk -v v="$1" -v max="$2" 'BEGIN {
+    if (v !~ /^[+-]?[0-9]+(\.[0-9]+)?(:[0-9]+(\.[0-9]+)?(:[0-9]+(\.[0-9]+)?)?)?$/) exit
+    neg = (v ~ /^-/); sub(/^[+-]/, "", v); n = split(v, p, ":")
+    if ((n >= 2 && p[2] >= 60) || (n >= 3 && p[3] >= 60)) exit
+    x = p[1] + (n >= 2 ? p[2] / 60 : 0) + (n >= 3 ? p[3] / 3600 : 0)
+    if (neg) x = -x
+    if (max == 24 && (x < 0 || x >= 24)) exit
+    if (max == 90 && (x < -90 || x > 90)) exit
+    printf "%.6f\n", x }'
+}
 
 # Watch a GoTo/GoHome until the Starbook reports it finished; abort after 180 s.
 watch_slew() {
@@ -115,7 +129,10 @@ case "$1" in
     "$SELF" status ;;
   goto)
     guard
-    [ $# -eq 3 ] || { echo "usage: $0 goto RA_hours DEC_degrees"; exit 1; }
+    [ $# -eq 3 ] || { echo "usage: $0 goto RA DEC   (RA hh:mm:ss or hours, DEC ±dd:mm:ss or degrees)"; exit 1; }
+    ra=$(todec "$2" 24); dec=$(todec "$3" 90)
+    [ -n "$ra" ] && [ -n "$dec" ] || { echo "bad coordinates: RA=$2 DEC=$3 (RA hh:mm:ss 0-24 h, DEC ±dd:mm:ss -90..90 deg)"; exit 1; }
+    set -- "$1" "$ra" "$dec"
     # Direct HTTP, same format as the INDI driver: RA=HH+MM.t&DEC=[-]DDD+MM (works without indiserver)
     q=$(awk -v ra="$2" -v dec="$3" 'BEGIN{
       ra = ra % 24; if (ra < 0) ra += 24; rm = int(ra * 600 + 0.5); rh = int(rm / 600) % 24; rm = rm % 600
@@ -128,18 +145,18 @@ case "$1" in
     # List the targets in the star file
     [ -r "$STARS" ] || { echo "star file not found: $STARS"; exit 1; }
     echo "targets in $STARS:"
-    awk '{ sub(/\r$/, "") } !/^[[:space:]]*(#|$)/ { printf "  %-14s RA %8.4f h   DEC %+8.4f deg\n", $1, $2, $3 }' "$STARS" ;;
+    awk '{ sub(/\r$/, "") } !/^[[:space:]]*(#|$)/ { printf "  %-16s RA %-12s DEC %s\n", $1, $2, $3 }' "$STARS" ;;
   star)
     # Slew to a target from the star file and watch the slew; aborts after 180 s.   (MOVES)
     [ -r "$STARS" ] || { echo "star file not found: $STARS"; exit 1; }
     [ $# -eq 2 ] || { echo "usage: $0 star NAME   (see '$0 stars' for the list in $STARS)"; exit 1; }
     radec=$(awk -v n="$2" '{ sub(/\r$/, "") } !/^[[:space:]]*(#|$)/ && tolower($1) == tolower(n) { print $2, $3; exit }' "$STARS")
     [ -n "$radec" ] || { echo "unknown star: $2 (not in $STARS - see '$0 stars')"; exit 1; }
-    read -r ra dec <<<"$radec"
-    awk -v ra="$ra" -v dec="$dec" 'BEGIN { exit !(ra + 0 == ra && dec + 0 == dec && ra >= 0 && ra < 24 && dec >= -90 && dec <= 90) }' \
-      || { echo "bad coordinates for $2 in $STARS: RA=$ra DEC=$dec (RA 0-24 h, DEC -90..90 deg)"; exit 1; }
+    read -r ra_s dec_s <<<"$radec"
+    ra=$(todec "$ra_s" 24); dec=$(todec "$dec_s" 90)
+    [ -n "$ra" ] && [ -n "$dec" ] || { echo "bad coordinates for $2 in $STARS: RA=$ra_s DEC=$dec_s (RA hh:mm:ss 0-24 h, DEC ±dd:mm:ss -90..90 deg)"; exit 1; }
     guard
-    echo "$2: RA $ra h, DEC $dec deg  (the Starbook refuses targets below its horizon)"
+    echo "$2: RA $ra_s  DEC $dec_s  (the Starbook refuses targets below its horizon)"
     [[ "$(st)" == *STATE=SCOPE* ]] || "$SELF" unpark >/dev/null
     [[ "$(st)" == *STATE=SCOPE* ]] || { echo "Starbook not in SCOPE mode - not slewing"; exit 1; }
     "$SELF" goto "$ra" "$dec" || { echo "Starbook rejected the GoTo - not slewing"; exit 1; }
