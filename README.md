@@ -86,7 +86,7 @@ Run `bash sb.sh` with no arguments to print this list.
 | Command | What it does |
 |---|---|
 | `star NAME` | Slew to a target from `stars.txt` and watch the slew until it arrives; aborts after 180 s. The name is matched without regard to case |
-| `goto RA DEC` | Slew to coordinates: RA `hh:mm:ss`, Dec `±dd:mm:ss` (decimals also work), e.g. `goto 00:42:44 +41:16:09`. Returns immediately (use `status` to follow it) |
+| `goto RA DEC` | Slew to coordinates: RA in hours as `hh:mm:ss`, Dec in decimal degrees, e.g. `goto 00:42:44 +41.2692`. Returns immediately (use `status` to follow it) |
 | `nudge N\|S\|E\|W SEC [SPEED]` | Short manual move to centre a star: up to 10 s, speed 1-8 (default 3) |
 | `park` | Slew to the home position and watch the slew. Tracking continues at home; follow with `init` to stop the motors |
 | `abort` | Stop all motion (slews and manual moves) |
@@ -110,16 +110,15 @@ or `init` away from home). Move the mount home by hand, then run `homed` or `res
 **Star list (`stars.txt`)**
 
 `star NAME` looks targets up in `stars.txt`, next to `sb.sh`. Edit it to add or change targets:
-one per line, `NAME  RA  DEC` (J2000), with RA as `hh:mm:ss` and Dec as `±dd:mm:ss`; `#` starts a comment.
+one per line, `NAME  RA  DEC` (J2000), with RA in hours as `hh:mm:ss` and Dec in decimal degrees; `#` starts a comment.
 
 ```
-# NAME            RA           DEC
-Vega              18:36:56.3   +38:47:01
-Andromeda_Galaxy  00:42:44.3   +41:16:09
+# NAME            RA (h:m:s)   DEC (deg)
+Vega              18:36:56.3   +38.7836
+Andromeda_Galaxy  00:42:44.3   +41.2692
 ```
 
-Names are one word (use `_` for spaces) and are matched without regard to case. `hh:mm` and
-plain decimals also work. To use a different file: `SB_STARS=/path/to/list.txt bash sb.sh star NAME`.
+Names are one word (use `_` for spaces) and are matched without regard to case. To use a different file: `SB_STARS=/path/to/list.txt bash sb.sh star NAME`.
 
 **Typical session**
 

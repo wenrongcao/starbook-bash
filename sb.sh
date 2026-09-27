@@ -7,7 +7,7 @@
 #   sb.sh settime          set Starbook clock from the Pi (Starbook must be at INIT screen)
 #   sb.sh homed            confirm the mount is at home (after init away from home, or a power cut)
 #   sb.sh unpark           leave INIT/park and enter Scope mode        (no motion)
-#   sb.sh goto RA DEC      slew; RA hh:mm:ss, DEC ±dd:mm:ss, e.g. goto 00:42:44 +41:16:09  (MOVES)
+#   sb.sh goto RA DEC      slew; RA hh:mm:ss (hours), DEC decimal degrees, e.g. goto 00:42:44 +41.2692  (MOVES)
 #   sb.sh star NAME        slew to a star from stars.txt (e.g. Vega), watch it, auto-abort  (MOVES)
 #   sb.sh stars            list the stars in stars.txt
 #   sb.sh nudge N|S|E|W SEC [SPEED]  short move to centre a star (1-8, default 3)  (MOVES)
@@ -129,9 +129,9 @@ case "$1" in
     "$SELF" status ;;
   goto)
     guard
-    [ $# -eq 3 ] || { echo "usage: $0 goto RA DEC   (RA hh:mm:ss or hours, DEC ±dd:mm:ss or degrees)"; exit 1; }
+    [ $# -eq 3 ] || { echo "usage: $0 goto RA DEC   (RA hh:mm:ss hours, DEC decimal degrees)"; exit 1; }
     ra=$(todec "$2" 24); dec=$(todec "$3" 90)
-    [ -n "$ra" ] && [ -n "$dec" ] || { echo "bad coordinates: RA=$2 DEC=$3 (RA hh:mm:ss 0-24 h, DEC ±dd:mm:ss -90..90 deg)"; exit 1; }
+    [ -n "$ra" ] && [ -n "$dec" ] || { echo "bad coordinates: RA=$2 DEC=$3 (RA hh:mm:ss 0-24 h, DEC decimal degrees -90..90)"; exit 1; }
     set -- "$1" "$ra" "$dec"
     # Direct HTTP, same format as the INDI driver: RA=HH+MM.t&DEC=[-]DDD+MM (works without indiserver)
     q=$(awk -v ra="$2" -v dec="$3" 'BEGIN{
@@ -154,7 +154,7 @@ case "$1" in
     [ -n "$radec" ] || { echo "unknown star: $2 (not in $STARS - see '$0 stars')"; exit 1; }
     read -r ra_s dec_s <<<"$radec"
     ra=$(todec "$ra_s" 24); dec=$(todec "$dec_s" 90)
-    [ -n "$ra" ] && [ -n "$dec" ] || { echo "bad coordinates for $2 in $STARS: RA=$ra_s DEC=$dec_s (RA hh:mm:ss 0-24 h, DEC ±dd:mm:ss -90..90 deg)"; exit 1; }
+    [ -n "$ra" ] && [ -n "$dec" ] || { echo "bad coordinates for $2 in $STARS: RA=$ra_s DEC=$dec_s (RA hh:mm:ss 0-24 h, DEC decimal degrees -90..90)"; exit 1; }
     guard
     echo "$2: RA $ra_s  DEC $dec_s  (the Starbook refuses targets below its horizon)"
     [[ "$(st)" == *STATE=SCOPE* ]] || "$SELF" unpark >/dev/null

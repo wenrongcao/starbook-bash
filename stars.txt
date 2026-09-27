@@ -1,23 +1,22 @@
 # Targets for "sb.sh star NAME".
 # One per line:  NAME  RA  DEC   (J2000)
 #   - NAME is one word, matched without regard to case (use _ instead of spaces, e.g. Andromeda_Galaxy)
-#   - RA  in hours:   hh:mm:ss  (0-24 h),        e.g. 18:36:56.3 = 18h 36m 56.3s
-#   - DEC in degrees: ±dd:mm:ss (-90..+90 deg),  e.g. +38:47:01  = +38° 47′ 01″  (negative = south)
-#   - hh:mm / dd:mm and plain decimals (18.6156, -16.7161) also work
+#   - RA  in hours, hh:mm:ss (0-24 h),                e.g. 18:36:56.3 = 18h 36m 56.3s
+#   - DEC in decimal degrees (-90..+90, negative = south), e.g. +38.7836
 #   - lines starting with # and blank lines are ignored
 
-# NAME        RA (h:m:s)   DEC (deg:m:s)
-Vega          18:36:56.3   +38:47:01
-Deneb         20:41:25.9   +45:16:49
-Altair        19:50:47.0   +08:52:06
-Arcturus      14:15:39.7   +19:10:57
-Capella       05:16:41.4   +45:59:53
-Polaris       02:31:49.1   +89:15:51
-Sirius        06:45:08.9   -16:42:58
-Betelgeuse    05:55:10.3   +07:24:25
-Rigel         05:14:32.3   -08:12:06
-Aldebaran     04:35:55.2   +16:30:33
-Antares       16:29:24.4   -26:25:55
-Spica         13:25:11.6   -11:09:41
-Regulus       10:08:22.3   +11:58:02
-Fomalhaut     22:57:39.0   -29:37:20
+# NAME        RA (h:m:s)    DEC (deg)
+Vega          18:36:56.3    +38.7836
+Deneb         20:41:25.9    +45.2803
+Altair        19:50:47.0     +8.8683
+Arcturus      14:15:39.7    +19.1825
+Capella       05:16:41.4    +45.9981
+Polaris       02:31:49.1    +89.2642
+Sirius        06:45:08.9    -16.7161
+Betelgeuse    05:55:10.3     +7.4069
+Rigel         05:14:32.3     -8.2017
+Aldebaran     04:35:55.2    +16.5092
+Antares       16:29:24.4    -26.4319
+Spica         13:25:11.6    -11.1614
+Regulus       10:08:22.3    +11.9672
+Fomalhaut     22:57:39.0    -29.6222
