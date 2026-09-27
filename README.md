@@ -110,7 +110,8 @@ or `init` away from home). Move the mount home by hand, then run `homed` or `res
 
 ```
 bash sb.sh reset          # after power-up, mount at home: INIT, clock set, flags cleared
-bash sb.sh star Vega      # slew to Vega (unparks automatically)
+bash sb.sh unpark         # enter Scope mode (RA starts tracking, no slew)
+bash sb.sh star Vega      # slew to Vega
 bash sb.sh park           # back to home
 bash sb.sh init           # both motors stop
 ```
