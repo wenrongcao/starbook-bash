@@ -12,7 +12,7 @@
 #   sb.sh nudge N|S|E|W SEC [SPEED]  short move to centre a star (1-8, default 3)  (MOVES)
 #   sb.sh align            last GoTo target is now centred -> add alignment star
 #   sb.sh init             reset to INIT where it is: both motors stop     (no motion)
-#   sb.sh reset [-y]       reset everything: INDI off, INIT, clock set, flags cleared (mount must be home)
+#   sb.sh reset [-y]       reset everything: INDI off, INIT, clock set, not-at-home flag cleared (mount must be home)
 #   sb.sh abort            stop all motion
 #   sb.sh park             go to home position and watch the slew       (MOVES)
 #   sb.sh indi-stop        disconnect and shut down the INDI server
@@ -174,7 +174,7 @@ case "$1" in
     do_reset ;;
   reset)
     # Reset everything to a clean start: stop INDI, Starbook to INIT (motors stop),
-    # clock from the Pi, clear the script's flags. The mount must be at home.
+    # clock from the Pi, clear the not-at-home flag. The mount must be at home.
     if [ "$2" != -y ]; then
       read -r -p "Is the mount physically at home (counterweight down, tube level)? [y/N] " a
       [[ "$a" == [yY]* ]] || { echo "not reset - move the mount home by hand first"; exit 1; }
