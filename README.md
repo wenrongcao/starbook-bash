@@ -78,7 +78,8 @@ Run `bash sb.sh` with no arguments to print this list.
 | `reset [-y]` | Reset everything: stop INDI, wait for the Starbook, reset it to INIT, set the clock, clear the not-at-home flag. Asks you to confirm the mount is at home; `-y` skips the question |
 | `stars` | List the targets in `stars.txt` |
 | `homed` | Confirm the mount is at home after moving it there by hand (clears the not-at-home flag) |
-| `unpark` | Leave INIT and enter Scope mode (`START`). The RA motor starts tracking; nothing slews. Assumes the mount is at home |
+| `unpark` | Leave INIT and enter Scope mode (`START`), then set chart zoom 6. The RA motor starts tracking; nothing slews. Assumes the mount is at home |
+| `zoom N` | Set the Starbook's chart zoom: 0 (closest) to 8 (whole sky), 6 is normal. The same setting is the speed of manual moves (`nudge` changes it). No motion |
 | `screen [COLS]` | Show the Starbook's screen in the terminal (24-bit colour half blocks), e.g. over SSH. Width defaults to the terminal width; 160+ columns makes the text readable, 320 is pixel-perfect |
 | `watch [SEC]` | Redraw the Starbook's screen every SEC seconds (default 5) as a live view; Ctrl-C quits |
 | `init` | Reset to INIT where the mount is: both motors stop. If the mount is more than 1° from home, sets the not-at-home flag |
@@ -143,10 +144,10 @@ bash sb.sh init           # both motors stop
   The Starbook refuses GoTos below its horizon (`ERROR:BELOW HORIZONE`), but that check uses its own
   clock, so run `sb.sh reset` or `sb.sh settime` after every power-up before slewing.
 - `ALIGN` ignores coordinates and only syncs to the last GoTo target.
-- Speed and chart zoom are the same setting (`SETSPEED` 0-8). After a restart it is at the widest
-  zoom, where all labels are drawn on top of each other and look like garbled text; `SETSPEED?speed=6`
-  gives a normal chart. `getscreen.bin` returns the 320x240 12-bit screen with no HTTP header
-  (`curl --http0.9`).
+- Speed and chart zoom are the same setting (`SETSPEED` 0-8: 0 closest/slowest, 8 whole sky/fastest;
+  the Starbook also answers OK to out-of-range values). After a restart the chart is garbled (labels
+  stacked on top of each other, no stars) until the first `SETSPEED`; `unpark` sets zoom 6 to fix it.
+  `getscreen.bin` returns the 320x240 12-bit screen with no HTTP header (`curl --http0.9`).
 
 ## License
 

@@ -12,6 +12,7 @@
 #   sb.sh stars            list the stars in stars.txt
 #   sb.sh nudge N|S|E|W SEC [SPEED]  short move to centre a star (1-8, default 3)  (MOVES)
 #   sb.sh align            last GoTo target is now centred -> add alignment star
+#   sb.sh zoom N           chart zoom 0 (closest) .. 8 (whole sky); also the manual-move speed
 #   sb.sh init             reset to INIT where it is: both motors stop     (no motion)
 #   sb.sh reset [-y]       reset everything: INDI off, INIT, clock set, not-at-home flag cleared (mount must be home)
 #   sb.sh screen [COLS]    show the Starbook screen in the terminal (24-bit colour)
@@ -184,7 +185,13 @@ case "$1" in
     set_ 'TELESCOPE_PARK.UNPARK=On' 2>/dev/null; sleep 2
     # the driver's UNPARK doesn't always leave INIT; START does the same thing directly
     [[ "$(st)" == *STATE=INIT* ]] && sbq START >/dev/null && sleep 2
+    # after a restart the chart is garbled (labels stacked, no stars) until a zoom is set
+    sbq "SETSPEED?speed=6" >/dev/null
     "$SELF" status ;;
+  zoom)
+    # Chart zoom = speed of manual moves: 0 (closest / slowest) .. 8 (whole sky / fastest). No motion.
+    [[ "$2" =~ ^[0-8]$ ]] || { echo "usage: $0 zoom N   (0 = closest .. 8 = whole sky; 6 = normal)"; exit 1; }
+    echo "zoom $2 -> $(sbq "SETSPEED?speed=$2")" ;;
   goto)
     guard
     [ $# -eq 3 ] || { echo "usage: $0 goto RA DEC   (RA hh:mm:ss hours, DEC decimal degrees)"; exit 1; }
@@ -273,5 +280,5 @@ case "$1" in
   indi-stop)
     set_ 'CONNECTION.DISCONNECT=On' 2>/dev/null; sleep 1; pkill -x indiserver; echo "indiserver stopped" ;;
   *)
-    sed -n '2,21p' "$SELF" | sed 's/^# \{0,1\}//' ;;
+    sed -n '2,22p' "$SELF" | sed 's/^# \{0,1\}//' ;;
 esac
