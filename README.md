@@ -11,21 +11,29 @@ The Starbook is controlled only over LAN, through URL commands to its built-in w
 
 Tested on Ubuntu 24.04 (Raspberry Pi 5).
 
-**Required** (all commands except `start`/`stop`). Most are already on a standard Ubuntu install:
+**Required.** Most are already on a standard Ubuntu install:
 
 | Package | Provides | Used for |
 |---|---|---|
 | `curl` | `curl` | every command sent to the Starbook |
 | `gawk` or `mawk` (any awk), `sed`, `grep`, `coreutils` | text handling, `readlink`, `date`, `seq`; awk also formats GoTo coordinates | throughout |
 | `procps` | `pgrep`, `pkill` | checking/stopping `indiserver` |
-| `iproute2` | `ip` | `start`: checks the adapter's 169.254 address |
+| `iproute2` | `ip` | `indi-start`: checks the adapter's 169.254 address |
 
 ```
 sudo apt install curl gawk procps iproute2
 ```
 
-**Optional: INDI**, only for `sb.sh start` / `sb.sh stop` and for driving the mount from
-KStars/Ekos or PHD2. Without it, `unpark` and `abort` still work (they fall back to direct commands).
+**Optional: INDI.** The mount does not need INDI: every command that controls it talks to the
+Starbook directly over HTTP. INDI is only needed so that **KStars/Ekos or PHD2** can drive the mount,
+because those programs only talk through an INDI server.
+
+| Command | Needs INDI? |
+|---|---|
+| `status`, `settime`, `reset`, `homed` | No |
+| `unpark`, `goto`, `star`, `nudge`, `align` | No |
+| `park`, `init`, `abort` | No |
+| `indi-start`, `indi-stop` | **Yes**, they only start and stop the INDI server itself |
 
 | Package | Provides |
 |---|---|
@@ -61,6 +69,7 @@ bash sb.sh star Vega      # slew to a bright star, watched, auto-abort after 180
 bash sb.sh park           # back to home
 bash sb.sh init           # reset to INIT: both motors stop
 bash sb.sh status         # state, RA/Dec, encoders, clock
+bash sb.sh indi-start     # only if KStars/Ekos or PHD2 should drive the mount
 ```
 
 Run `bash sb.sh` with no arguments for all commands.

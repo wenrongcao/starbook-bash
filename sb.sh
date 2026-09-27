@@ -2,7 +2,7 @@
 # Control the Vixen Starbook (original) through INDI, without KStars.
 # Link: Pi -> TP-Link USB-LAN (enx6c5ab0b3b739, 169.254.1.2/16) -> Starbook 169.254.1.1
 #
-#   sb.sh start            start indiserver + Starbook driver and connect
+#   sb.sh indi-start       start the INDI server + Starbook driver (only for KStars/Ekos/PHD2)
 #   sb.sh status           show state, RA/Dec, firmware
 #   sb.sh settime          set Starbook clock from the Pi (Starbook must be at INIT screen)
 #   sb.sh homed            confirm the mount is at home (after init away from home, or a power cut)
@@ -15,7 +15,7 @@
 #   sb.sh reset [-y]       reset everything: INDI off, INIT, clock set, flags cleared (mount must be home)
 #   sb.sh abort            stop all motion
 #   sb.sh park             go to home position and watch the slew       (MOVES)
-#   sb.sh stop             disconnect and shut down indiserver
+#   sb.sh indi-stop        disconnect and shut down the INDI server
 
 SELF=$(readlink -f "$0")               # absolute path, so "bash sb.sh" can call itself
 DEV=Starbook
@@ -71,7 +71,7 @@ do_reset() {
 }
 
 case "$1" in
-  start)
+  indi-start)
     ip -br addr show "$IFACE" 2>/dev/null | grep -q 169.254.1.2 \
       || { echo "169.254.1.2 is not on $IFACE - run: sudo ip addr add 169.254.1.2/16 dev $IFACE"; exit 1; }
     if ! pgrep -x indiserver >/dev/null; then
@@ -195,7 +195,7 @@ case "$1" in
     guard
     echo "GOHOME -> $(sbq 'GOHOME?HOME=0' | cut -c1-2)"
     watch_slew ;;
-  stop)
+  indi-stop)
     set_ 'CONNECTION.DISCONNECT=On' 2>/dev/null; sleep 1; pkill -x indiserver; echo "indiserver stopped" ;;
   *)
     sed -n '2,19p' "$SELF" | sed 's/^# \{0,1\}//' ;;
