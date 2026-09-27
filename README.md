@@ -19,6 +19,7 @@ Tested on Ubuntu 24.04 (Raspberry Pi 5).
 | `gawk` or `mawk` (any awk), `sed`, `grep`, `coreutils` | text handling, `readlink`, `date`, `seq`; awk also formats GoTo coordinates | throughout |
 | `procps` | `pgrep`, `pkill` | checking/stopping `indiserver` |
 | `iproute2` | `ip` | `indi-start`: checks the adapter's 169.254 address |
+| `coreutils` (`base64`, `fold`, `od`) | | `screen`/`watch`: decoding and sending the screen image |
 
 ```
 sudo apt install curl gawk procps iproute2
@@ -80,7 +81,7 @@ Run `bash sb.sh` with no arguments to print this list.
 | `homed` | Confirm the mount is at home after moving it there by hand (clears the not-at-home flag) |
 | `unpark` | Leave INIT and enter Scope mode (`START`), then set chart zoom 6. The RA motor starts tracking; nothing slews. Assumes the mount is at home |
 | `zoom N` | Set the Starbook's chart zoom: 0 (closest) to 8 (whole sky), 6 is normal. The same setting is the speed of manual moves (`nudge` changes it). No motion |
-| `screen [COLS]` | Show the Starbook's screen in the terminal (24-bit colour half blocks), e.g. over SSH. Width defaults to the terminal width; 160+ columns makes the text readable, 320 is pixel-perfect |
+| `screen [COLS]` | Show the Starbook's screen in the terminal, e.g. over SSH. In terminals with the Kitty graphics protocol (Ghostty, kitty, WezTerm, Konsole) it is the real image, pixel-perfect; elsewhere 24-bit colour half blocks (readable from ~160 columns). Force one with `SB_SCREEN=kitty` or `SB_SCREEN=blocks`. Width defaults to fitting the terminal |
 | `watch [SEC]` | Redraw the Starbook's screen every SEC seconds (default 5) as a live view; Ctrl-C quits |
 | `init` | Reset to INIT where the mount is: both motors stop. If the mount is more than 1° from home, sets the not-at-home flag |
 

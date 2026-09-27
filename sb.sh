@@ -89,15 +89,45 @@ do_reset() {
   echo "WARNING: encoders changed or no reply"; return 1
 }
 
-# Draw the Starbook's 320x240 screen in the terminal: half blocks (upper = fg, lower = bg)
-# in 24-bit colour. $1 = width in columns (2..320). The screen is 12-bit colour, 2 pixels
-# per 3 bytes: [R1 G1][B1 R2][G2 B2] (4 bits each). Each character cell averages a box.
-draw_screen() {
-  local cols=$1 tmp
-  tmp=$(mktemp) || return 1
-  curl -s --http0.9 -m 30 -o "$tmp" "$SB/getscreen.bin"
-  if [ "$(stat -c %s "$tmp" 2>/dev/null)" != 115200 ]; then rm -f "$tmp"; echo "could not read the Starbook screen"; return 1; fi
-  od -An -v -tu1 "$tmp" | awk -v cols="$cols" '
+# ---- Starbook screen in the terminal -------------------------------------------------
+# getscreen.bin: 320x240, 12-bit colour, 2 pixels per 3 bytes [R1 G1][B1 R2][G2 B2] (4 bits each),
+# sent with no HTTP header (needs curl --http0.9).
+# Two ways to draw it:
+#   kitty  - real pixels via the Kitty graphics protocol (Ghostty, kitty, WezTerm, Konsole): sharp
+#   blocks - 24-bit colour half blocks (any terminal): blurry below ~160 columns
+# Picked from $TERM / $TERM_PROGRAM; force one with SB_SCREEN=kitty or SB_SCREEN=blocks.
+
+fetch_screen() {   # $1 = output file; fails unless a full 115200-byte frame arrives
+  curl -s --http0.9 -m 30 -o "$1" "$SB/getscreen.bin"
+  [ "$(stat -c %s "$1" 2>/dev/null)" = 115200 ] || { echo "could not read the Starbook screen"; return 1; }
+}
+
+screen_mode() {
+  case "${SB_SCREEN:-}" in kitty|blocks) echo "$SB_SCREEN"; return ;; esac
+  case "$TERM:${TERM_PROGRAM:-}" in *kitty*|*ghostty*|*:WezTerm|*konsole*) echo kitty ;; *) echo blocks ;; esac
+}
+
+# Kitty graphics: send raw RGB (f=24) in base64, 4096-byte chunks; the terminal scales it to $2 columns.
+draw_kitty() {   # $1 = frame file, $2 = columns
+  od -An -v -tu1 "$1" | LC_ALL=C awk '
+    { for (i = 1; i <= NF; i++) b[n++] = $i }
+    END { for (k = 0; k < n; k += 3) {
+            printf "%c%c%c", int(b[k] / 16) * 17, (b[k] % 16) * 17, int(b[k+1] / 16) * 17
+            printf "%c%c%c", (b[k+1] % 16) * 17, int(b[k+2] / 16) * 17, (b[k+2] % 16) * 17 } }' |
+    base64 -w0 | fold -w 4096 | awk -v c="$2" '
+      function send(chunk, more) {
+        if (first) printf "\033_Gf=24,s=320,v=240,a=T,q=2,c=%d,m=%d;%s\033\\", c, more, chunk
+        else       printf "\033_Gm=%d;%s\033\\", more, chunk
+        first = 0 }
+      BEGIN { first = 1 }
+      NR > 1 { send(prev, 1) }
+      { prev = $0 }
+      END { send(prev, 0); print "" }'
+}
+
+# Half blocks: upper half = foreground, lower half = background; each cell averages a box.
+draw_blocks() {   # $1 = frame file, $2 = columns (2..320)
+  od -An -v -tu1 "$1" | awk -v cols="$2" '
     { for (i = 1; i <= NF; i++) b[n++] = $i }
     END {
       for (p = 0; p < 76800; p++) {                 # decode 12-bit pixels
@@ -110,7 +140,7 @@ draw_screen() {
       for (y = 0; y < h; y += 2) {
         line = ""; last = ""
         for (x = 0; x < cols; x++) {
-          for (half = 0; half < 2; half++) {        # average the box under each half cell
+          for (half = 0; half < 2; half++) {
             x0 = int(x * s); x1 = int((x + 1) * s); if (x1 <= x0) x1 = x0 + 1
             y0 = int((y + half) * s); y1 = int((y + half + 1) * s); if (y1 <= y0) y1 = y0 + 1
             sr = sg = sb = cnt = 0
@@ -125,24 +155,38 @@ draw_screen() {
         print line "\033[0m"
       }
     }'
+}
+
+# Width to draw at: $1 if given, else the terminal width; for kitty also keep the 4:3 image
+# (about 3/8 as many rows as columns, cells being ~1:2) inside the terminal height.
+screen_cols() {
+  local c=${1:-$(tput cols 2>/dev/null || echo 80)} l
+  l=$(tput lines 2>/dev/null || echo 30)
+  if [ "$(screen_mode)" = kitty ] && [ -z "$1" ] && [ $(( c * 3 / 8 )) -gt $(( l - 2 )) ]; then c=$(( (l - 2) * 8 / 3 )); fi
+  [ "$c" -gt 320 ] && c=320; [ "$c" -lt 2 ] && c=2
+  echo "$c"
+}
+
+draw_screen() {   # $1 = columns
+  local tmp; tmp=$(mktemp) || return 1
+  fetch_screen "$tmp" || { rm -f "$tmp"; return 1; }
+  if [ "$(screen_mode)" = kitty ]; then draw_kitty "$tmp" "$1"; else draw_blocks "$tmp" "$1"; fi
   rm -f "$tmp"
 }
 
 case "$1" in
   screen)
-    # Show the Starbook's screen in the terminal. Optional width in columns (default: terminal width).
-    cols=${2:-$(tput cols 2>/dev/null || echo 80)}
-    [[ "$cols" =~ ^[0-9]+$ ]] || { echo "usage: $0 screen [COLUMNS]"; exit 1; }
-    [ "$cols" -gt 320 ] && cols=320; [ "$cols" -lt 2 ] && cols=2
-    draw_screen "$cols" ;;
+    # Show the Starbook's screen in the terminal. Optional width in columns (default: fit the terminal).
+    [ -z "$2" ] || [[ "$2" =~ ^[0-9]+$ ]] || { echo "usage: $0 screen [COLUMNS]"; exit 1; }
+    draw_screen "$(screen_cols "$2")" ;;
   watch)
     # Redraw the Starbook's screen every SEC seconds (default 5) until Ctrl-C.
     sec=${2:-5}; [[ "$sec" =~ ^[0-9]+$ ]] && [ "$sec" -ge 1 ] || { echo "usage: $0 watch [SECONDS]"; exit 1; }
     trap 'printf "\033[0m\033[?25h\n"; exit 0' INT TERM
     printf '\033[?25l\033[2J'
     while :; do
-      cols=$(tput cols 2>/dev/null || echo 80); [ "$cols" -gt 320 ] && cols=320
-      out=$(draw_screen "$cols")
+      out=$(draw_screen "$(screen_cols)")
+      [ "$(screen_mode)" = kitty ] && printf '\033_Ga=d,d=A,q=2\033\\'   # drop the previous frame
       printf '\033[H%s\n\033[0m%s  (every %ss, Ctrl-C to quit)\033[K' "$out" "$(date +%T)" "$sec"
       sleep "$sec"
     done ;;
