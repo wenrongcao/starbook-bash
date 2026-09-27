@@ -64,15 +64,56 @@ install Ubuntu's `libstellarsolver2` alongside the PPA's `libstellarsolver`.
 ## Usage
 
 ```
-bash sb.sh reset          # after power-up, mount at home: INIT, clock set, flags cleared
-bash sb.sh star Vega      # slew to a bright star, watched, auto-abort after 180 s
-bash sb.sh park           # back to home
-bash sb.sh init           # reset to INIT: both motors stop
-bash sb.sh status         # state, RA/Dec, encoders, clock
-bash sb.sh indi-start     # only if KStars/Ekos or PHD2 should drive the mount
+bash sb.sh <command> [arguments]
 ```
 
-Run `bash sb.sh` with no arguments for all commands.
+Run `bash sb.sh` with no arguments to print this list.
+
+**Status and setup** (no motion)
+
+| Command | What it does |
+|---|---|
+| `status` | Show state (INIT/SCOPE/CHART/USER, and "slewing" during a GoTo), RA/Dec, encoder counts, the Starbook's clock next to the Pi's, firmware, the not-at-home flag, and whether INDI is running |
+| `settime` | Set the Starbook's clock from the Pi. Only works in INIT (the startup screen) |
+| `reset [-y]` | Reset everything: stop INDI, wait for the Starbook, reset it to INIT, set the clock, clear the not-at-home flag. Asks you to confirm the mount is at home; `-y` skips the question |
+| `homed` | Confirm the mount is at home after moving it there by hand (clears the not-at-home flag) |
+| `unpark` | Leave INIT and enter Scope mode (`START`). The RA motor starts tracking; nothing slews. Assumes the mount is at home |
+| `init` | Reset to INIT where the mount is: both motors stop. If the mount is more than 1° from home, sets the not-at-home flag |
+
+**Motion** (the mount moves)
+
+| Command | What it does |
+|---|---|
+| `star NAME` | Slew to a named bright star and watch the slew until it arrives; aborts after 180 s. Names: Vega, Deneb, Altair, Arcturus, Capella, Polaris, Sirius, Betelgeuse, Rigel, Aldebaran, Antares, Spica, Regulus, Fomalhaut |
+| `goto RA DEC` | Slew to coordinates: RA in hours, Dec in degrees, e.g. `goto 0.712 41.27`. Returns immediately (use `status` to follow it) |
+| `nudge N\|S\|E\|W SEC [SPEED]` | Short manual move to centre a star: up to 10 s, speed 1-8 (default 3) |
+| `park` | Slew to the home position and watch the slew. Tracking continues at home; follow with `init` to stop the motors |
+| `abort` | Stop all motion (slews and manual moves) |
+
+**Alignment**
+
+| Command | What it does |
+|---|---|
+| `align` | After a GoTo and centring the star (e.g. with `nudge`), tell the Starbook the last GoTo target is now centred. Repeat on 2-4 stars |
+
+**INDI** (only for KStars/Ekos or PHD2)
+
+| Command | What it does |
+|---|---|
+| `indi-start` | Start the INDI server with the Starbook driver and connect it (then point KStars/Ekos or PHD2 at `localhost:7624`) |
+| `indi-stop` | Disconnect and shut down the INDI server |
+
+Commands that slew refuse to run while the not-at-home flag is set (after a power cut during a slew,
+or `init` away from home). Move the mount home by hand, then run `homed` or `reset`.
+
+**Typical session**
+
+```
+bash sb.sh reset          # after power-up, mount at home: INIT, clock set, flags cleared
+bash sb.sh star Vega      # slew to Vega (unparks automatically)
+bash sb.sh park           # back to home
+bash sb.sh init           # both motors stop
+```
 
 ## Starbook behaviour worth knowing
 

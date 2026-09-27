@@ -1,9 +1,9 @@
 #!/bin/bash
-# Control the Vixen Starbook (original) through INDI, without KStars.
+# Control the Vixen Starbook (original) over HTTP from a Raspberry Pi; INDI is optional.
 # Link: Pi -> TP-Link USB-LAN (enx6c5ab0b3b739, 169.254.1.2/16) -> Starbook 169.254.1.1
 #
 #   sb.sh indi-start       start the INDI server + Starbook driver (only for KStars/Ekos/PHD2)
-#   sb.sh status           show state, RA/Dec, firmware
+#   sb.sh status           show state, RA/Dec, encoders, clock, firmware
 #   sb.sh settime          set Starbook clock from the Pi (Starbook must be at INIT screen)
 #   sb.sh homed            confirm the mount is at home (after init away from home, or a power cut)
 #   sb.sh unpark           leave INIT/park and enter Scope mode        (no motion)
