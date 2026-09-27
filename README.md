@@ -7,6 +7,41 @@ The Starbook is controlled only over LAN, through URL commands to its built-in w
 `sb.sh` sends those directly with `curl`, and can also start the INDI driver
 (`indi_starbook_telescope`) for KStars/Ekos or PHD2.
 
+## Requirements
+
+Tested on Ubuntu 24.04 (Raspberry Pi 5).
+
+**Required** (all commands except `start`/`stop`). Most are already on a standard Ubuntu install:
+
+| Package | Provides | Used for |
+|---|---|---|
+| `curl` | `curl` | every command sent to the Starbook |
+| `python3-minimal` | `/usr/bin/python3` | `star`: star catalogue and altitude check |
+| `gawk` (or any awk), `sed`, `grep`, `coreutils` | text handling, `readlink`, `date`, `seq` | throughout |
+| `procps` | `pgrep`, `pkill` | checking/stopping `indiserver` |
+| `iproute2` | `ip` | `start`: checks the adapter's 169.254 address |
+
+```
+sudo apt install curl python3-minimal gawk procps iproute2
+```
+
+**Optional: INDI**, only for `sb.sh start` / `sb.sh stop` and for driving the mount from
+KStars/Ekos or PHD2. Without it, `unpark` and `abort` still work (they fall back to direct commands).
+
+| Package | Provides |
+|---|---|
+| `indi-bin` | `indiserver`, `indi_getprop`, `indi_setprop` |
+| `indi-starbook` | `indi_starbook_telescope` (the Starbook driver) |
+
+```
+sudo apt install indi-bin indi-starbook
+```
+
+Both are in Ubuntu's `universe` repository; newer builds come from the INDI PPA
+(`sudo add-apt-repository ppa:mutlaqja/ppa`). If you use KStars from that PPA
+(`kstars-bleeding`) and it fails with `libstellarsolver.so.2: cannot open shared object file`,
+install Ubuntu's `libstellarsolver2` alongside the PPA's `libstellarsolver`.
+
 ## Setup
 
 - Connect the Starbook through a **USB-Ethernet adapter**. The Pi 5's built-in Ethernet lost
