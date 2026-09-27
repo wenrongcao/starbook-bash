@@ -141,3 +141,8 @@ bash sb.sh init           # both motors stop
   The Starbook refuses GoTos below its horizon (`ERROR:BELOW HORIZONE`), but that check uses its own
   clock, so run `sb.sh reset` or `sb.sh settime` after every power-up before slewing.
 - `ALIGN` ignores coordinates and only syncs to the last GoTo target.
+
+## License
+
+MIT, see [LICENSE](LICENSE). The script drives real hardware: use it at your own risk and keep
+a hand near the mount's power switch.
