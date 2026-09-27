@@ -16,7 +16,7 @@ Tested on Ubuntu 24.04 (Raspberry Pi 5).
 | Package | Provides | Used for |
 |---|---|---|
 | `curl` | `curl` | every command sent to the Starbook |
-| `gawk` or `mawk` (any awk), `sed`, `grep`, `coreutils` | text handling, `readlink`, `date`, `seq`; awk also does the floating-point maths (star altitude, coordinate formatting) | throughout |
+| `gawk` or `mawk` (any awk), `sed`, `grep`, `coreutils` | text handling, `readlink`, `date`, `seq`; awk also formats GoTo coordinates | throughout |
 | `procps` | `pgrep`, `pkill` | checking/stopping `indiserver` |
 | `iproute2` | `ip` | `start`: checks the adapter's 169.254 address |
 
@@ -73,4 +73,6 @@ Run `bash sb.sh` with no arguments for all commands.
 - In Scope/Chart mode the RA motor always tracks; `STOP` only stops slews. Only `RESET`
   (-> INIT, ~2 min restart) stops both motors.
 - The clock resets to 2000-01-01 at every power-up (weak backup battery); `SETTIME` only works in INIT.
+  The Starbook refuses GoTos below its horizon (`ERROR:BELOW HORIZONE`), but that check uses its own
+  clock, so run `sb.sh reset` or `sb.sh settime` after every power-up before slewing.
 - `ALIGN` ignores coordinates and only syncs to the last GoTo target.

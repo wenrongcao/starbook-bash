@@ -137,23 +137,12 @@ case "$1" in
       *) radec="" ;;
     esac
     [ -n "$radec" ] || { echo "unknown star: $2"; exit 1; }
-    # altitude now, from local sidereal time; site from the Starbook (GETPLACE: N39 28, W119 49)
-    read -r ra dec alt < <(awk -v t="$(date +%s)" -v radec="$radec" 'BEGIN {
-      split(radec, a, " "); ra = a[1]; dec = a[2]
-      pi = atan2(0, -1); r = pi / 180
-      lat = 39 + 28 / 60; lon = -(119 + 49 / 60)
-      d = t / 86400 + 2440587.5 - 2451545.0                   # days since J2000
-      lst = (18.697374558 + 24.06570982441908 * d + lon / 15) % 24
-      ha = (lst - ra) * 15 * r
-      x = sin(lat * r) * sin(dec * r) + cos(lat * r) * cos(dec * r) * cos(ha)
-      alt = atan2(x, sqrt(1 - x * x)) / r                     # asin(x)
-      printf "%s %s %.1f\n", ra, dec, alt }')
+    read -r ra dec <<<"$radec"
     guard
-    echo "$2: RA $ra h, DEC $dec deg, altitude $alt deg"
-    awk "BEGIN{exit !($alt < 20)}" && { echo "too low (< 20 deg) - not slewing"; exit 1; }
+    echo "$2: RA $ra h, DEC $dec deg  (the Starbook refuses targets below its horizon)"
     [[ "$(st)" == *STATE=SCOPE* ]] || "$SELF" unpark >/dev/null
     [[ "$(st)" == *STATE=SCOPE* ]] || { echo "Starbook not in SCOPE mode - not slewing"; exit 1; }
-    "$SELF" goto "$ra" "$dec" || { echo "GoTo rejected - not slewing"; exit 1; }
+    "$SELF" goto "$ra" "$dec" || { echo "Starbook rejected the GoTo - not slewing"; exit 1; }
     watch_slew ;;
   nudge)
     # Short manual move to centre a star: nudge N|S|E|W SECONDS [SPEED 1-8, default 3]   (MOVES)
