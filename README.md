@@ -7,6 +7,10 @@ The Starbook is controlled only over LAN, through URL commands to its built-in w
 `sb.sh` sends those directly with `curl`, and can also start the INDI driver
 (`indi_starbook_telescope`) for KStars/Ekos or PHD2.
 
+![Starbook screen captured with sb.sh screen: Scope mode, pointing at Sirius](docs/starbook-screen.png)
+
+*The Starbook's own screen, captured over the LAN with `bash sb.sh screen` after `bash sb.sh star Sirius`.*
+
 ## Requirements
 
 Tested on Ubuntu 24.04 (Raspberry Pi 5).
