@@ -1,12 +1,12 @@
 # Targets for "sb.sh star NAME".
 # One per line:  NAME  RA  DEC   (J2000)
 #   - NAME is one word, matched without regard to case (use _ instead of spaces, e.g. Andromeda_Galaxy)
-#   - RA  as hh:mm:ss  (hours 0-24), e.g. 18:36:56.3
-#   - DEC as ±dd:mm:ss (degrees -90..+90, negative = south), e.g. +38:47:01 or -16:42:58
+#   - RA  in hours:   hh:mm:ss  (0-24 h),        e.g. 18:36:56.3 = 18h 36m 56.3s
+#   - DEC in degrees: ±dd:mm:ss (-90..+90 deg),  e.g. +38:47:01  = +38° 47′ 01″  (negative = south)
 #   - hh:mm / dd:mm and plain decimals (18.6156, -16.7161) also work
 #   - lines starting with # and blank lines are ignored
 
-# NAME        RA           DEC
+# NAME        RA (h:m:s)   DEC (deg:m:s)
 Vega          18:36:56.3   +38:47:01
 Deneb         20:41:25.9   +45:16:49
 Altair        19:50:47.0   +08:52:06
