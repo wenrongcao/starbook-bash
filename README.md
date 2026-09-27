@@ -9,7 +9,19 @@ The Starbook is controlled only over LAN, through URL commands to its built-in w
 
 ![Starbook screen captured with sb.sh screen: Scope mode, pointing at Sirius](docs/starbook-screen.png)
 
-*The Starbook's own screen, captured over the LAN with `bash sb.sh screen` after `bash sb.sh star Sirius`.*
+*The Starbook's screen as `bash sb.sh screen` shows it in the terminal (TUI) over SSH, after
+`bash sb.sh star Sirius`: the real 320x240 image, fetched over the LAN and drawn with the Kitty
+graphics protocol in Ghostty.*
+
+What the TUI view needs:
+
+- **On the Pi:** nothing beyond the required packages below: `curl` (fetches `getscreen.bin`),
+  `gawk`/`mawk` (decodes the 12-bit colour) and `coreutils` (`od`, `base64`, `fold`, `stat`, `mktemp`).
+  No image library or Python.
+- **On your computer:** a terminal that supports the Kitty graphics protocol, which works through SSH:
+  [Ghostty](https://ghostty.org), [kitty](https://sw.kovidgoyal.net/kitty/), WezTerm or Konsole.
+  Any other terminal with 24-bit colour gets a half-block rendering instead (blurry below ~160 columns);
+  force either with `SB_SCREEN=kitty` or `SB_SCREEN=blocks`.
 
 ## Requirements
 
