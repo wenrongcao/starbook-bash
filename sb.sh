@@ -3,7 +3,7 @@
 # Link: Pi -> TP-Link USB-LAN (enx6c5ab0b3b739, 169.254.1.2/16) -> Starbook 169.254.1.1
 #
 #   sb.sh indi-start       start the INDI server + Starbook driver (only for KStars/Ekos/PHD2)
-#   sb.sh status           show state, RA/Dec, encoders, clock, firmware
+#   sb.sh status           show state, RA/Dec, encoders, clock, firmware, meridian flip
 #   sb.sh settime          set Starbook clock from the Pi (Starbook must be at INIT screen)
 #   sb.sh homed            confirm the mount is at home (after a power cut during a slew)
 #   sb.sh unpark           leave INIT/park and enter Scope mode        (no motion)
@@ -125,6 +125,31 @@ flip_start() {   # $1 RA hours, $2 DEC deg: start the watcher if the target is s
   setsid "$SELF" _flipwatch "$1" "$2" "$n" >>"$FLIPLOG" 2>&1 </dev/null &
   echo $! >"$FLIPPID"
   echo "meridian flip: automatic, $n min after the meridian (in $(awk "BEGIN{printf \"%.0f\", ($n / 60 - $ha) * 60}") min); log: $FLIPLOG"
+}
+
+meridian_status() {   # meridian-flip lines for "status"
+  local m n tra tdec ha pid run=0 at stop
+  read -r m n <<<"$(meridian_get)"
+  if [ "$m" = on ]; then echo "meridian: auto flip on, $n min after the meridian"; else echo "meridian: auto flip off (press Yes on the Starbook when it asks)"; fi
+  [ -r "$FLIPPID" ] && read -r pid <"$FLIPPID" && kill -0 "$pid" 2>/dev/null && run=1
+  if [ -r "$TARGET" ]; then
+    read -r tra tdec <"$TARGET"; ha=$(hour_angle "$tra")
+    echo "  target:  RA $tra h, DEC $tdec deg - $(awk -v h="$ha" 'BEGIN { m = h * 60; if (m < 0) printf "%.1f min before the meridian (east)", -m; else printf "%.1f min after the meridian (west)", m }')"
+    at()   { date -d "@$(awk -v h="$ha" -v k="$1" -v t="$(date +%s)" 'BEGIN { printf "%d", t + (k / 60 - h) * 3600 }')" +%H:%M; }
+    if [ $run = 1 ]; then
+      echo "  watcher: running - flip in $(awk -v h="$ha" -v k="$n" 'BEGIN { printf "%.1f", k - h * 60 }') min (at $(at "$n"))"
+    elif [ "$m" = on ] && awk "BEGIN{exit !($ha < 0)}"; then
+      echo "  watcher: NOT running although the target is east - re-send the GoTo (star/goto) to arm it"
+    elif [ "$m" = off ] && awk "BEGIN{exit !($ha < 21 / 60)}"; then
+      echo "  the Starbook will stop and ask to reverse ~21 min after the meridian (at $(at 21))"
+    else
+      echo "  watcher: not running (no flip pending)"
+    fi
+  else
+    echo "  target:  none yet (star/goto)"
+  fi
+  [ -r "$FLIPLOG" ] && grep -qE 'flip done|FLIP FAILED' "$FLIPLOG" && echo "  last:    $(grep -E 'flip done|FLIP FAILED' "$FLIPLOG" | tail -1)"
+  return 0
 }
 
 # ---- Starbook screen in the terminal -------------------------------------------------
@@ -255,7 +280,8 @@ case "$1" in
     echo "clock:    $(sbq GETTIME.ASP)   (Pi: $(TZ=Etc/GMT+7 date '+%Y %-m %-d %-H %-M %-S'))"
     echo "firmware: $(sbq VERSION.ASP | sed 's/version=//')"
     [ -e "$NOTHOME" ] && echo "flag:     NOT AT HOME - $(cat "$NOTHOME")"
-    pgrep -x indiserver >/dev/null && echo "indi:     running" || echo "indi:     not running (only needed for KStars/PHD2)" ;;
+    pgrep -x indiserver >/dev/null && echo "indi:     running" || echo "indi:     not running (only needed for KStars/PHD2)"
+    meridian_status ;;
   settime)
     t=$(TZ=Etc/GMT+7 date '+%Y+%m+%d+%H+%M+%S')
     echo "SETTIME $t -> $(sbq "SETTIME?TIME=$t")" ;;

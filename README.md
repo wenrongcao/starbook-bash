@@ -90,7 +90,7 @@ Run `bash sb.sh` with no arguments to print this list.
 
 | Command | What it does |
 |---|---|
-| `status` | Show state (INIT/SCOPE/CHART/USER, and "slewing" during a GoTo), RA/Dec, encoder counts, the Starbook's clock next to the Pi's, firmware, the not-at-home flag, and whether INDI is running |
+| `status` | Show state (INIT/SCOPE/CHART/USER, and "slewing" during a GoTo), RA/Dec, encoder counts, the Starbook's clock next to the Pi's, firmware, the not-at-home flag, and whether INDI is running. Also the meridian flip: setting, current target and its distance from the meridian, whether the watcher is running with a countdown and the clock time of the flip, and the last flip result |
 | `settime` | Set the Starbook's clock from the Pi. Only works in INIT (the startup screen), so run it after `init` and before `unpark`. Make sure the Pi's own clock is right first (`date`), e.g. if it has no internet |
 | `init [-y]` | Start clean: stop INDI and any meridian watcher, wait for the Starbook, reset it to INIT (both motors stop), clear the not-at-home flag. Asks you to confirm the mount is at home; `-y` skips the question. Does **not** change the clock: it prints the Starbook's and the Pi's clocks (and whether the Pi is internet-synced) and reminds you to run `settime` if they differ |
 | `stars` | List the targets in `stars.txt` |
