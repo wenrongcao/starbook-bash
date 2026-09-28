@@ -93,7 +93,7 @@ Run `bash sb.sh` with no arguments to print this list.
 | `status` | Show state (INIT/SCOPE/CHART/USER, and "slewing" during a GoTo), RA/Dec, altitude and azimuth (computed on the Pi from RA/Dec, clock and site; azimuth from north, with the Starbook screen's from-south value alongside), the constellation it points at, encoder counts, the Starbook's clock next to the Pi's, firmware, the not-at-home flag, and whether INDI is running. Also the meridian flip: setting, current target and its distance from the meridian, whether the watcher is running with a countdown and the clock time of the flip, and the last flip result |
 | `settime` | Set the Starbook's clock from the Pi. Only works in INIT (the startup screen), so run it after `init` and before `unpark`. Make sure the Pi's own clock is right first (`date`), e.g. if it has no internet |
 | `init [-y]` | Start clean: stop INDI and any meridian watcher, wait for the Starbook, reset it to INIT (both motors stop), clear the not-at-home flag. Asks you to confirm the mount is at home; `-y` skips the question. Does **not** change the clock: it prints the Starbook's and the Pi's clocks (and whether the Pi is internet-synced) and reminds you to run `settime` if they differ |
-| `stars` | List the targets in `stars.txt` |
+| `stars [TEXT]` | List the targets in `stars.txt` with their notes; TEXT filters names and notes, e.g. `stars galaxy`, `stars Orion`, `stars M4` |
 | `homed` | Confirm the mount is at home after moving it there by hand (clears the not-at-home flag) |
 | `unpark` | Leave INIT and enter Scope mode (`START`), then set chart zoom 6. The RA motor starts tracking; nothing slews. Assumes the mount is at home |
 | `zoom N` | Set the Starbook's chart zoom: 0 (closest) to 8 (whole sky), 6 is normal. The same setting is the speed of manual moves (`nudge` changes it). No motion |
@@ -129,16 +129,20 @@ Move the mount home by hand, then run `homed` or `init`.
 
 **Star list (`stars.txt`)**
 
-`star NAME` looks targets up in `stars.txt`, next to `sb.sh`. Edit it to add or change targets:
-one per line, `NAME  RA  DEC` (J2000), with RA in hours as `hh:mm:ss` and Dec in decimal degrees; `#` starts a comment.
+`star NAME` looks targets up in `stars.txt`, next to `sb.sh`. It ships with **all 173 stars brighter
+than magnitude 3.0** (Yale Bright Star Catalogue, CDS V/50; IAU star names, Bayer names otherwise) and
+**all 110 Messier objects** (OpenNGC; M102 as NGC 5866). Edit it to add or change targets: one per
+line, `NAME  RA  DEC` (J2000), with RA in hours as `hh:mm:ss` and Dec in decimal degrees; text after
+`#` is a note shown by `sb.sh stars`.
 
 ```
-# NAME            RA (h:m:s)   DEC (deg)
-Vega              18:36:56.3   +38.7836
-Andromeda_Galaxy  00:42:44.3   +41.2692
+# NAME             RA (h:m:s)    DEC (deg)   # comment
+Vega               18:36:56.3    +38.7836   # mag +0.03, Alpha Lyr, Lyra
+M31                00:42:44.4    +41.2691   # Andromeda Galaxy, galaxy, NGC 224, Andromeda
 ```
 
-Names are one word (use `_` for spaces) and are matched without regard to case. To use a different file: `SB_STARS=/path/to/list.txt bash sb.sh star NAME`.
+Names are one word (use `_` for spaces) and are matched without regard to case (`star m31`).
+To use a different file: `SB_STARS=/path/to/list.txt bash sb.sh star NAME`.
 
 **Constellation (`constellations.txt`)**
 

@@ -9,7 +9,7 @@
 #   sb.sh unpark           leave INIT/park and enter Scope mode        (no motion)
 #   sb.sh goto RA DEC      slew; RA hh:mm:ss (hours), DEC decimal degrees, e.g. goto 00:42:44 +41.2692  (MOVES)
 #   sb.sh star NAME        slew to a star from stars.txt, watch it, auto-abort; auto meridian flip  (MOVES)
-#   sb.sh stars            list the stars in stars.txt
+#   sb.sh stars [TEXT]     list targets in stars.txt (173 stars to mag 3, all Messier); TEXT filters
 #   sb.sh meridian [on|off|MIN]  auto meridian flip after GoTo/star: on (default), off, or MIN after (default 5)
 #   sb.sh nudge N|S|E|W SEC [SPEED]  short move to centre a star (1-8, default 3)  (MOVES)
 #   sb.sh align            last GoTo target is now centred -> add alignment star
@@ -363,10 +363,12 @@ case "$1" in
     echo "$2 $3" >"$TARGET"
     [ -n "$SB_NOFLIP" ] || flip_start "$2" "$3" ;;
   stars)
-    # List the targets in the star file
+    # List the targets in the star file; optional TEXT filters names and comments (e.g. galaxy, Orion)
     [ -r "$STARS" ] || { echo "star file not found: $STARS"; exit 1; }
-    echo "targets in $STARS:"
-    awk '{ sub(/\r$/, "") } !/^[[:space:]]*(#|$)/ { printf "  %-16s RA %-12s DEC %s\n", $1, $2, $3 }' "$STARS" ;;
+    awk -v q="$2" '{ sub(/\r$/, "") } !/^[[:space:]]*(#|$)/ && (q == "" || index(tolower($0), tolower(q))) {
+        c = ""; if ((k = index($0, "#")) > 0) c = substr($0, k + 1); sub(/^ */, "", c)
+        printf "  %-18s RA %-11s DEC %+9.4f  %s\n", $1, $2, $3, c; n++ }
+      END { printf "%d target(s)%s in %s\n", n, (q == "" ? "" : " matching \"" q "\""), FILENAME }' "$STARS" ;;
   star)
     # Slew to a target from the star file and watch the slew; aborts after 180 s.   (MOVES)
     [ -r "$STARS" ] || { echo "star file not found: $STARS"; exit 1; }
