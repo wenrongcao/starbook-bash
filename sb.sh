@@ -3,7 +3,7 @@
 # Link: Pi -> TP-Link USB-LAN (enx6c5ab0b3b739, 169.254.1.2/16) -> Starbook 169.254.1.1
 #
 #   sb.sh indi-start       start the INDI server + Starbook driver (only for KStars/Ekos/PHD2)
-#   sb.sh status           show state, RA/Dec, Alt/Az, encoders, clock, firmware, meridian flip
+#   sb.sh status           show state, RA/Dec, Alt/Az, constellation, encoders, clock, firmware, meridian flip
 #   sb.sh settime          set Starbook clock from the Pi (Starbook must be at INIT screen)
 #   sb.sh homed            confirm the mount is at home (after a power cut during a slew)
 #   sb.sh unpark           leave INIT/park and enter Scope mode        (no motion)
@@ -29,6 +29,7 @@ LOG=/tmp/indiserver-starbook.log
 NOTHOME=$HOME/starbook/.not_at_home   # set when the Starbook no longer knows the mount is at home
 STARS=${SB_STARS:-$(dirname "$SELF")/stars.txt}   # star list for "star NAME"; override with SB_STARS=file
 TARGET=$HOME/starbook/.target          # last GoTo target "RA_hours DEC_deg"
+CONST=$(dirname "$SELF")/constellations.txt   # IAU constellation boundaries (B1875) + names
 MERIDIAN=$HOME/starbook/.meridian      # meridian-flip setting: "on MIN" (default "on 5") or "off MIN"
 FLIPPID=$HOME/starbook/.meridian.pid   # background meridian-flip watcher
 FLIPLOG=$HOME/starbook/meridian.log    # its log
@@ -150,6 +151,32 @@ meridian_status() {   # meridian-flip lines for "status"
   fi
   [ -r "$FLIPLOG" ] && grep -qE 'flip done|FLIP FAILED' "$FLIPLOG" && echo "  last:    $(grep -E 'flip done|FLIP FAILED' "$FLIPLOG" | tail -1)"
   return 0
+}
+
+# Constellation containing RA $1 (hours) / DEC $2 (degrees) of date: precess to B1875.0
+# (IAU 1976 angles zeta, z, theta) and take the first boundary box in constellations.txt with
+# RA_low <= RA < RA_up and DEC >= DEC_low (Roman 1987). Prints "Full name (Abr)".
+constellation() {
+  [ -r "$CONST" ] || { echo "?"; return; }
+  awk -v ra="$1" -v dec="$2" -v t="$(date +%s)" '
+    BEGIN {
+      k = atan2(0, -1) / 180; as = k / 3600
+      T = (t / 86400 + 2440587.5 - 2451545.0) / 36525            # now, centuries from J2000
+      tt = (2405889.258550475 - 2451545.0) / 36525 - T           # now -> B1875.0 (negative)
+      zeta  = ((2306.2181 + 1.39656 * T - 0.000139 * T * T) * tt + (0.30188 - 0.000344 * T) * tt * tt + 0.017998 * tt ^ 3) * as
+      z     = ((2306.2181 + 1.39656 * T - 0.000139 * T * T) * tt + (1.09468 + 0.000066 * T) * tt * tt + 0.018203 * tt ^ 3) * as
+      theta = ((2004.3109 - 0.85330 * T - 0.000217 * T * T) * tt - (0.42665 + 0.000217 * T) * tt * tt - 0.041833 * tt ^ 3) * as
+      a0 = ra * 15 * k; d0 = dec * k
+      A = cos(d0) * sin(a0 + zeta)
+      B = cos(theta) * cos(d0) * cos(a0 + zeta) - sin(theta) * sin(d0)
+      C = sin(theta) * cos(d0) * cos(a0 + zeta) + cos(theta) * sin(d0)
+      r = (atan2(A, B) + z) / k / 15; if (r < 0) r += 24; if (r >= 24) r -= 24
+      d = atan2(C, sqrt(1 - C * C)) / k
+    }
+    { sub(/\r$/, "") }
+    /^= / { ab = $2; $1 = ""; $2 = ""; sub(/^  */, ""); name[ab] = $0; next }
+    /^ *[0-9]/ && !found && d >= $3 && r >= $1 && r < $2 { found = $4 }
+    END { print (found ? name[found] " (" found ")" : "?") }' "$CONST"
 }
 
 # ---- Starbook screen in the terminal -------------------------------------------------
@@ -278,10 +305,12 @@ case "$1" in
     echo "DEC:      $dec"
     # Alt/Az aren't in GETSTATUS: compute them from RA/Dec, the Pi's clock and the site (N39 28, W119 49).
     # Azimuth from north (N 0, E 90, S 180, W 270). Note: the Starbook screen counts from south (S 0, W 90).
-    echo "$s" | awk -v t="$(date +%s)" '{
+    # RA (hours) and Dec (degrees) from the reply, e.g. RA=18+36.9&DEC=038+46 or DEC=-00+30
+    read -r cra cdec <<<"$(echo "$s" | awk '{
       match($0, /RA=[0-9]+\+[0-9.]+/);  split(substr($0, RSTART + 3, RLENGTH - 3), r, "+")
       match($0, /DEC=-?[0-9]+\+[0-9]+/); dd = substr($0, RSTART + 4, RLENGTH - 4); split(dd, d, "+")
-      ra = r[1] + r[2] / 60; dec = (dd ~ /^-/ ? -1 : 1) * ((d[1] < 0 ? -d[1] : d[1]) + d[2] / 60)
+      printf "%.6f %.6f\n", r[1] + r[2] / 60, (dd ~ /^-/ ? -1 : 1) * ((d[1] < 0 ? -d[1] : d[1]) + d[2] / 60) }')"
+    awk -v t="$(date +%s)" -v ra="$cra" -v dec="$cdec" 'BEGIN {
       pi = atan2(0, -1); k = pi / 180; lat = 39 + 28 / 60; lon = -(119 + 49 / 60)
       j = t / 86400 + 2440587.5 - 2451545.0; lst = (18.697374558 + 24.06570982441908 * j + lon / 15) % 24
       ha = (lst - ra) * 15 * k; de = dec * k; la = lat * k
@@ -290,6 +319,7 @@ case "$1" in
       s = az - 180; if (s < 0) s += 360
       printf "ALT:      %.1f deg%s\n", alt, (alt < 0 ? "  (below the horizon)" : "")
       printf "AZ:       %.1f deg from north  (Starbook screen, from south: %.1f)\n", az, s }'
+    echo "CONST:    $(constellation "$cra" "$cdec")"
     echo "encoders: $(sbq GETXY.ASP)"
     echo "clock:    $(sbq GETTIME.ASP)   (Pi: $(TZ=Etc/GMT+7 date '+%Y %-m %-d %-H %-M %-S'))"
     echo "firmware: $(sbq VERSION.ASP | sed 's/version=//')"

@@ -90,7 +90,7 @@ Run `bash sb.sh` with no arguments to print this list.
 
 | Command | What it does |
 |---|---|
-| `status` | Show state (INIT/SCOPE/CHART/USER, and "slewing" during a GoTo), RA/Dec, altitude and azimuth (computed on the Pi from RA/Dec, clock and site; azimuth from north, with the Starbook screen's from-south value alongside), encoder counts, the Starbook's clock next to the Pi's, firmware, the not-at-home flag, and whether INDI is running. Also the meridian flip: setting, current target and its distance from the meridian, whether the watcher is running with a countdown and the clock time of the flip, and the last flip result |
+| `status` | Show state (INIT/SCOPE/CHART/USER, and "slewing" during a GoTo), RA/Dec, altitude and azimuth (computed on the Pi from RA/Dec, clock and site; azimuth from north, with the Starbook screen's from-south value alongside), the constellation it points at, encoder counts, the Starbook's clock next to the Pi's, firmware, the not-at-home flag, and whether INDI is running. Also the meridian flip: setting, current target and its distance from the meridian, whether the watcher is running with a countdown and the clock time of the flip, and the last flip result |
 | `settime` | Set the Starbook's clock from the Pi. Only works in INIT (the startup screen), so run it after `init` and before `unpark`. Make sure the Pi's own clock is right first (`date`), e.g. if it has no internet |
 | `init [-y]` | Start clean: stop INDI and any meridian watcher, wait for the Starbook, reset it to INIT (both motors stop), clear the not-at-home flag. Asks you to confirm the mount is at home; `-y` skips the question. Does **not** change the clock: it prints the Starbook's and the Pi's clocks (and whether the Pi is internet-synced) and reminds you to run `settime` if they differ |
 | `stars` | List the targets in `stars.txt` |
@@ -139,6 +139,15 @@ Andromeda_Galaxy  00:42:44.3   +41.2692
 ```
 
 Names are one word (use `_` for spaces) and are matched without regard to case. To use a different file: `SB_STARS=/path/to/list.txt bash sb.sh star NAME`.
+
+**Constellation (`constellations.txt`)**
+
+`status` names the constellation the scope points at. `constellations.txt` holds the official IAU
+boundaries (Delporte 1930) as 357 RA/Dec boxes for equinox B1875.0, from N. G. Roman (1987),
+*Identification of a Constellation From a Position*, PASP 99, 695
+([CDS catalogue VI/42](https://cdsarc.cds.unistra.fr/viz-bin/cat/VI/42)), plus the 88 names.
+The script precesses the position to B1875.0 in awk (IAU 1976 precession) and takes the first box
+that contains it.
 
 **Typical session**
 
