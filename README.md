@@ -34,7 +34,7 @@ Tested on Ubuntu 24.04 (Raspberry Pi 5).
 | `curl` | `curl` | every command sent to the Starbook |
 | `gawk` or `mawk` (any awk), `sed`, `grep`, `coreutils` | text handling, `readlink`, `date`, `seq`; awk also formats GoTo coordinates | throughout |
 | `procps` | `pgrep`, `pkill` | checking/stopping `indiserver` |
-| `iproute2` | `ip` | `indi-start`: checks the adapter's 169.254 address |
+| `iproute2` | `ip` | `indi-start`: checks the adapter's address (only if `SB_IFACE` is set) |
 | `coreutils` (`base64`, `fold`, `od`) | | `screen`/`watch`: decoding and sending the screen image |
 
 ```
@@ -76,15 +76,38 @@ install Ubuntu's `libstellarsolver2` alongside the PPA's `libstellarsolver`.
   sudo ip addr add 169.254.1.2/16 dev <adapter>
   ```
 
-  Set `IFACE` in `sb.sh` to the adapter's name.
+- **Install** (optional): `./install.sh` links the script as `sb` in `~/.local/bin` and adds bash
+  tab completion, so you can type `sb goto Ve<Tab>` (commands, object and constellation names in any
+  case, `meridian on/off`, `nudge N/S/E/W`, ...). `./install.sh --uninstall` removes both.
+  Without installing, run `bash sb.sh <command>`.
+
+### Settings
+
+Nothing is specific to one site. **The location and time zone are read from the Starbook itself**
+(its own Location and Local Time settings, via `GETPLACE`) and cached; `sb status` shows them, and
+`sb init` re-reads them. Everything else has a default that you can change in
+`~/.config/starbook.conf` (see [`starbook.conf.example`](starbook.conf.example)) or with environment
+variables, which take priority:
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `SB_HOST` | `169.254.1.1` | the Starbook's address |
+| `SB_PI_ADDR` | `169.254.1.2` | this computer's address on the Starbook's network |
+| `SB_IFACE` | (none) | network interface to the Starbook; `indi-start` checks `SB_PI_ADDR` is on it |
+| `SB_LAT`, `SB_LON`, `SB_TZ` | from the Starbook | override the site: latitude, longitude (east +), time zone (hours from UTC) |
+| `SB_STATE` | `~/.local/state/starbook` | the not-at-home flag, last target, meridian setting and log |
+| `SB_OBJECTS` | `sky_objects.txt` | a different list of named targets |
+
+The config file is only read as `SB_*=value` lines; nothing in it is executed.
 
 ## Usage
 
 ```
-bash sb.sh <command> [arguments]
+sb <command> [arguments]          # after ./install.sh
+bash sb.sh <command> [arguments]  # without installing
 ```
 
-Run `bash sb.sh` with no arguments to print this list.
+Run `sb` with no arguments to print this list.
 
 **Status and setup** (no motion)
 
@@ -105,7 +128,7 @@ Run `bash sb.sh` with no arguments to print this list.
 | Command | What it does |
 |---|---|
 | `goto NAME` / `goto RA DEC` | Slew to a named object from `sky_objects.txt` (`goto Vega`, `goto M4`; case-insensitive), to the centre of a constellation (`goto Lyr`, `goto Lyra`, `goto Ursa_Major`), or to coordinates: RA in hours as `hh:mm:ss`, Dec in decimal degrees (`goto 00:42:44 +41.2692`). Unparks if needed, watches the slew until it arrives (aborts after 180 s; says so if already on target) and arms the automatic meridian flip (see `meridian`) |
-| `meridian [on\|off\|MIN]` | Automatic meridian flip for `goto`: `on` (default) re-sends the GoTo MIN minutes after the target crosses the meridian (default 5, 1-15), from a background watcher that logs to `meridian.log`; `off` leaves the flip to you (press Yes on the Starbook). No argument shows the setting and any running watcher. No motion by itself |
+| `meridian [on\|off\|MIN]` | Automatic meridian flip for `goto`: `on` (default) re-sends the GoTo MIN minutes after the target crosses the meridian (default 5, 1-15), from a background watcher that logs to `~/.local/state/starbook/meridian.log`; `off` leaves the flip to you (press Yes on the Starbook). No argument shows the setting and any running watcher. No motion by itself |
 | `nudge N\|S\|E\|W SEC [SPEED]` | Short manual move to centre a star: up to 10 s, speed 1-8 (default 3) |
 | `park` | Slew to the home position and watch the slew. Tracking continues at home; follow with `init` to stop the motors |
 | `abort` | Stop all motion (slews and manual moves) |
@@ -161,12 +184,12 @@ Serpens has two parts: `goto Ser` / `goto Serpens` goes to Serpens Caput, `goto 
 **Typical session**
 
 ```
-bash sb.sh init           # after power-up, mount at home: INIT, flag cleared, clock check printed
-bash sb.sh settime        # only if init says the Starbook clock is off
-bash sb.sh unpark         # enter Scope mode (RA starts tracking, no slew)
-bash sb.sh goto Vega      # slew to Vega (or goto M31, or goto 18:36:56 +38.78)
-bash sb.sh park           # back to home
-bash sb.sh init           # at home again: both motors stop
+sb init           # after power-up, mount at home: INIT, flag cleared, clock check printed
+sb settime        # only if init says the Starbook clock is off
+sb unpark         # enter Scope mode (RA starts tracking, no slew)
+sb goto Vega      # slew to Vega (or goto M31, or goto 18:36:56 +38.78)
+sb park           # back to home
+sb init           # at home again: both motors stop
 ```
 
 ## Starbook behaviour worth knowing

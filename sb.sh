@@ -1,6 +1,6 @@
 #!/bin/bash
 # Control the Vixen Starbook (original) over HTTP from a Raspberry Pi; INDI is optional.
-# Link: Pi -> TP-Link USB-LAN (enx6c5ab0b3b739, 169.254.1.2/16) -> Starbook 169.254.1.1
+# Settings (Starbook address, site, ...): see "settings" below and ~/.config/starbook.conf.
 #
 #   sb.sh indi-start       start the INDI server + Starbook driver (only for KStars/Ekos/PHD2)
 #   sb.sh status           show state, RA/Dec, Alt/Az, constellation, encoders, clock, firmware, meridian flip
@@ -23,17 +23,67 @@
 #   sb.sh indi-stop        disconnect and shut down the INDI server
 
 SELF=$(readlink -f "$0")               # absolute path, so "bash sb.sh" can call itself
+DIR=${SB_DIR:-$(dirname "$SELF")}      # where sky_objects.txt / constellations.txt live
+
+# ---- settings -------------------------------------------------------------------------
+# Defaults below. Override any SB_* in ~/.config/starbook.conf (KEY=value lines) or in the
+# environment (the environment wins). The site (latitude, longitude, time zone) is read from
+# the Starbook itself (GETPLACE) and cached; set SB_LAT/SB_LON/SB_TZ to override it.
+SB_CONF=${SB_CONF:-${XDG_CONFIG_HOME:-$HOME/.config}/starbook.conf}
+if [ -r "$SB_CONF" ]; then
+  while IFS='=' read -r k v; do
+    [[ "$k" =~ ^SB_[A-Z_]+$ ]] || continue          # only SB_* keys; no code is executed
+    v=${v%%#*}; v=${v%"${v##*[![:space:]]}"}; v=${v#\"}; v=${v%\"}
+    [ -z "${!k+x}" ] && printf -v "$k" '%s' "$v"
+  done <"$SB_CONF"
+fi
+SB_HOST=${SB_HOST:-169.254.1.1}        # the Starbook's address
+SB_PI_ADDR=${SB_PI_ADDR:-169.254.1.2}  # this computer's address on the Starbook's network
+SB_IFACE=${SB_IFACE:-}                 # network interface to the Starbook (optional; checked by indi-start)
+SB_STATE=${SB_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/starbook}   # flags, target, meridian log
+SB=http://$SB_HOST
 DEV=Starbook
-IFACE=enx6c5ab0b3b739
-SB=http://169.254.1.1
 LOG=/tmp/indiserver-starbook.log
-NOTHOME=$HOME/starbook/.not_at_home   # set when the Starbook no longer knows the mount is at home
-OBJECTS=${SB_OBJECTS:-$(dirname "$SELF")/sky_objects.txt}   # named targets for "goto NAME"; override with SB_OBJECTS=file
-TARGET=$HOME/starbook/.target          # last GoTo target "RA_hours DEC_deg"
-CONST=$(dirname "$SELF")/constellations.txt   # IAU constellation boundaries (B1875) + names
-MERIDIAN=$HOME/starbook/.meridian      # meridian-flip setting: "on MIN" (default "on 5") or "off MIN"
-FLIPPID=$HOME/starbook/.meridian.pid   # background meridian-flip watcher
-FLIPLOG=$HOME/starbook/meridian.log    # its log
+OBJECTS=${SB_OBJECTS:-$DIR/sky_objects.txt}   # named targets for "goto NAME"
+CONST=$DIR/constellations.txt          # IAU constellation boundaries (B1875), names, centres
+NOTHOME=$SB_STATE/not_at_home          # set when the Starbook no longer knows the mount is at home
+TARGET=$SB_STATE/target                # last GoTo target "RA_hours DEC_deg"
+MERIDIAN=$SB_STATE/meridian            # meridian-flip setting: "on MIN" (default "on 5") or "off MIN"
+FLIPPID=$SB_STATE/meridian.pid         # background meridian-flip watcher
+FLIPLOG=$SB_STATE/meridian.log         # its log
+SITE=$SB_STATE/site                    # cached site from the Starbook: "lat lon tz"
+mkdir -p "$SB_STATE"
+# one-time move of the state files from the old location (the script's own folder)
+for f in not_at_home target meridian meridian.pid meridian.log; do
+  old=$DIR/.$f; [ "$f" = meridian.log ] && old=$DIR/$f
+  [ -e "$old" ] && [ ! -e "$SB_STATE/$f" ] && mv "$old" "$SB_STATE/$f"
+done
+
+now() { echo "${SB_NOW:-$(date +%s)}"; }   # Unix time (SB_NOW fixes it, for testing)
+
+# Site: "lat lon tz" (degrees north, degrees east, hours from UTC). From SB_LAT/SB_LON/SB_TZ,
+# else the cache, else the Starbook's GETPLACE ("longitude=W119+49&latitude=N39+28&timezone=-7").
+site() {
+  if [ -n "$SB_LAT" ] && [ -n "$SB_LON" ] && [ -n "$SB_TZ" ]; then echo "$SB_LAT $SB_LON $SB_TZ"; return; fi
+  if [ ! -s "$SITE" ] || [ "$1" = refresh ]; then
+    local p; p=$(sbq GETPLACE.ASP)
+    echo "$p" | awk '{
+      if (!match($0, /longitude=[EW][0-9]+\+[0-9]+/)) exit 1; lo = substr($0, RSTART + 10, RLENGTH - 10)
+      if (!match($0, /latitude=[NS][0-9]+\+[0-9]+/)) exit 1;  la = substr($0, RSTART + 9, RLENGTH - 9)
+      if (!match($0, /timezone=-?[0-9.]+/)) exit 1;            tz = substr($0, RSTART + 9, RLENGTH - 9)
+      split(substr(lo, 2), a, "+"); lon = (substr(lo, 1, 1) == "W" ? -1 : 1) * (a[1] + a[2] / 60)
+      split(substr(la, 2), b, "+"); lat = (substr(la, 1, 1) == "S" ? -1 : 1) * (b[1] + b[2] / 60)
+      printf "%.4f %.4f %s\n", lat, lon, tz }' >"$SITE.new" 2>/dev/null && mv "$SITE.new" "$SITE" || rm -f "$SITE.new"
+  fi
+  local lat lon tz; read -r lat lon tz 2>/dev/null <"$SITE"
+  echo "${SB_LAT:-${lat:-0}} ${SB_LON:-${lon:-0}} ${SB_TZ:-${tz:-0}}"
+  [ -n "$lat$SB_LAT" ] || echo "warning: site unknown (Starbook not answering, no cache) - set SB_LAT/SB_LON/SB_TZ" >&2
+}
+lat() { local a _; read -r a _ <<<"$(site)"; echo "$a"; }
+lon() { local _ b _c; read -r _ b _c <<<"$(site)"; echo "$b"; }
+tzh() { local _ _b c; read -r _ _b c <<<"$(site)"; echo "$c"; }
+# Local time on the Starbook's time zone: local_date FORMAT [UNIX_TIME]
+local_date() { date -u -d "@$(awk -v t="${2:-$(now)}" -v z="$(tzh)" 'BEGIN { printf "%d", t + z * 3600 }')" "$1"; }
 
 get() { indi_getprop -t 3 -1 "$DEV.$1" 2>/dev/null; }
 set_() { indi_setprop "$DEV.$1"; }
@@ -108,10 +158,10 @@ do_reset() {
   echo "WARNING: encoders changed or no reply"; return 1
 }
 
-# Hour angle (hours, -12..12) of RA $1 (hours) now; site from the Starbook (GETPLACE: W119 49).
+# Hour angle (hours, -12..12) of RA $1 (hours) now, at the site's longitude.
 hour_angle() {
-  awk -v t="$(date +%s)" -v ra="$1" 'BEGIN {
-    lon = -(119 + 49 / 60); d = t / 86400 + 2440587.5 - 2451545.0
+  awk -v t="$(now)" -v ra="$1" -v lon="$(lon)" 'BEGIN {
+    d = t / 86400 + 2440587.5 - 2451545.0
     lst = (18.697374558 + 24.06570982441908 * d + lon / 15) % 24
     ha = lst - ra; if (ha > 12) ha -= 24; if (ha < -12) ha += 24
     printf "%.4f\n", ha }'
@@ -151,7 +201,10 @@ flip_start() {   # $1 RA hours, $2 DEC deg: start the watcher if the target is s
   [ "$m" = on ] || { echo "meridian flip: off (press Yes on the Starbook when it asks)"; return; }
   ha=$(hour_angle "$1")
   if awk "BEGIN{exit !($ha >= 0)}"; then echo "meridian flip: not needed (target already west of the meridian)"; return; fi
-  setsid "$SELF" _flipwatch "$1" "$2" "$n" >>"$FLIPLOG" 2>&1 </dev/null &
+  # run from a private copy: bash reads a running script from disk, so editing sb.sh (or git pull)
+  # while the watcher waits would otherwise break it
+  cp "$SELF" "$SB_STATE/watcher.sh"
+  SB_DIR="$DIR" setsid bash "$SB_STATE/watcher.sh" _flipwatch "$1" "$2" "$n" >>"$FLIPLOG" 2>&1 </dev/null &
   echo $! >"$FLIPPID"
   echo "meridian flip: automatic, $n min after the meridian (in $(awk "BEGIN{printf \"%.0f\", ($n / 60 - $ha) * 60}") min); log: $FLIPLOG"
 }
@@ -164,7 +217,7 @@ meridian_status() {   # meridian-flip lines for "status"
   if [ -r "$TARGET" ]; then
     read -r tra tdec <"$TARGET"; ha=$(hour_angle "$tra")
     echo "  target:  RA $tra h, DEC $tdec deg - $(awk -v h="$ha" 'BEGIN { m = h * 60; if (m < 0) printf "%.1f min before the meridian (east)", -m; else printf "%.1f min after the meridian (west)", m }')"
-    at()   { date -d "@$(awk -v h="$ha" -v k="$1" -v t="$(date +%s)" 'BEGIN { printf "%d", t + (k / 60 - h) * 3600 }')" +%H:%M; }
+    at()   { local_date +%H:%M "$(awk -v h="$ha" -v k="$1" -v t="$(now)" 'BEGIN { printf "%d", t + (k / 60 - h) * 3600 }')"; }
     if [ $run = 1 ]; then
       echo "  watcher: running - flip in $(awk -v h="$ha" -v k="$n" 'BEGIN { printf "%.1f", k - h * 60 }') min (at $(at "$n"))"
     elif [ "$m" = on ] && awk "BEGIN{exit !($ha < 0)}"; then
@@ -200,7 +253,7 @@ const_centre() {
 # RA_low <= RA < RA_up and DEC >= DEC_low (Roman 1987). Prints "Full name (Abr)".
 constellation() {
   [ -r "$CONST" ] || { echo "?"; return; }
-  awk -v ra="$1" -v dec="$2" -v t="$(date +%s)" '
+  awk -v ra="$1" -v dec="$2" -v t="$(now)" '
     BEGIN {
       k = atan2(0, -1) / 180; as = k / 3600
       T = (t / 86400 + 2440587.5 - 2451545.0) / 36525            # now, centuries from J2000
@@ -324,8 +377,10 @@ case "$1" in
       sleep "$sec"
     done ;;
   indi-start)
-    ip -br addr show "$IFACE" 2>/dev/null | grep -q 169.254.1.2 \
-      || { echo "169.254.1.2 is not on $IFACE - run: sudo ip addr add 169.254.1.2/16 dev $IFACE"; exit 1; }
+    if [ -n "$SB_IFACE" ]; then
+      ip -br addr show "$SB_IFACE" 2>/dev/null | grep -q "$SB_PI_ADDR" \
+        || { echo "$SB_PI_ADDR is not on $SB_IFACE - run: sudo ip addr add $SB_PI_ADDR/16 dev $SB_IFACE"; exit 1; }
+    fi
     if ! pgrep -x indiserver >/dev/null; then
       indiserver indi_starbook_telescope >"$LOG" 2>&1 &
       sleep 3
@@ -345,15 +400,16 @@ case "$1" in
     echo "state:    $(echo "$s" | sed -E 's/.*STATE=([A-Z]+).*/\1/')$(echo "$s" | grep -q 'GOTO=1' && echo '  (slewing)')"
     echo "RA:       $ra"
     echo "DEC:      $dec"
-    # Alt/Az aren't in GETSTATUS: compute them from RA/Dec, the Pi's clock and the site (N39 28, W119 49).
+    # Alt/Az aren't in GETSTATUS: compute them from RA/Dec, the Pi's clock and the site.
     # Azimuth from north (N 0, E 90, S 180, W 270). Note: the Starbook screen counts from south (S 0, W 90).
     # RA (hours) and Dec (degrees) from the reply, e.g. RA=18+36.9&DEC=038+46 or DEC=-00+30
     read -r cra cdec <<<"$(echo "$s" | awk '{
       match($0, /RA=[0-9]+\+[0-9.]+/);  split(substr($0, RSTART + 3, RLENGTH - 3), r, "+")
       match($0, /DEC=-?[0-9]+\+[0-9]+/); dd = substr($0, RSTART + 4, RLENGTH - 4); split(dd, d, "+")
       printf "%.6f %.6f\n", r[1] + r[2] / 60, (dd ~ /^-/ ? -1 : 1) * ((d[1] < 0 ? -d[1] : d[1]) + d[2] / 60) }')"
-    awk -v t="$(date +%s)" -v ra="$cra" -v dec="$cdec" 'BEGIN {
-      pi = atan2(0, -1); k = pi / 180; lat = 39 + 28 / 60; lon = -(119 + 49 / 60)
+    read -r slat slon _ <<<"$(site)"
+    awk -v t="$(now)" -v ra="$cra" -v dec="$cdec" -v lat="$slat" -v lon="$slon" 'BEGIN {
+      pi = atan2(0, -1); k = pi / 180
       j = t / 86400 + 2440587.5 - 2451545.0; lst = (18.697374558 + 24.06570982441908 * j + lon / 15) % 24
       ha = (lst - ra) * 15 * k; de = dec * k; la = lat * k
       x = sin(la) * sin(de) + cos(la) * cos(de) * cos(ha); alt = atan2(x, sqrt(1 - x * x)) / k
@@ -363,13 +419,15 @@ case "$1" in
       printf "AZ:       %.1f deg from north  (Starbook screen, from south: %.1f)\n", az, s }'
     echo "CONST:    $(constellation "$cra" "$cdec")"
     echo "encoders: $(sbq GETXY.ASP)"
-    echo "clock:    $(sbq GETTIME.ASP)   (Pi: $(TZ=Etc/GMT+7 date '+%Y %-m %-d %-H %-M %-S'))"
+    echo "clock:    $(sbq GETTIME.ASP)   (Pi: $(local_date '+%Y %-m %-d %-H %-M %-S'))"
+    read -r slat slon stz <<<"$(site)"; src="from the Starbook"; [ -n "$SB_LAT$SB_LON$SB_TZ" ] && src="SB_LAT/SB_LON/SB_TZ override"
+    echo "site:     lat $slat, lon $slon, UTC$( [[ $stz == -* ]] || echo +)$stz  ($src)"
     echo "firmware: $(sbq VERSION.ASP | sed 's/version=//')"
     [ -e "$NOTHOME" ] && echo "flag:     NOT AT HOME - $(cat "$NOTHOME")"
     pgrep -x indiserver >/dev/null && echo "indi:     running" || echo "indi:     not running (only needed for KStars/PHD2)"
     meridian_status ;;
   settime)
-    t=$(TZ=Etc/GMT+7 date '+%Y+%m+%d+%H+%M+%S')
+    t=$(local_date '+%Y+%m+%d+%H+%M+%S')
     echo "SETTIME $t -> $(sbq "SETTIME?TIME=$t")" ;;
   homed)
     rm -f "$NOTHOME"; echo "ok - mount confirmed at home; unpark allowed" ;;
@@ -446,6 +504,19 @@ case "$1" in
       read -r tra _ <"$TARGET"; ha=$(hour_angle "$tra")
       echo "watcher running for RA $tra h: target $(awk "BEGIN{printf \"%+.1f\", $ha * 60}") min from the meridian"
     fi ;;
+  _complete)
+    # (internal) words for bash tab completion: _complete commands | _complete CMD PREFIX
+    case "$2" in
+      commands) sed -n '2,/^$/p' "$SELF" | awk '/^#   sb\.sh [a-z]/ { print $3 }' | sed 's/|.*//' | sort -u ;;
+      goto) awk -v q="$3" 'BEGIN { q = tolower(q) } { sub(/\r$/, "") }
+              FILENAME ~ /constellations/ && /^= / { ab = $2; $1 = ""; $2 = ""; sub(/^  */, ""); f = $0; gsub(/ /, "_", f)
+                                                    if (index(tolower(ab), q) == 1) print ab; if (index(tolower(f), q) == 1) print f; next }
+              FILENAME !~ /constellations/ && !/^[[:space:]]*(#|$)/ && index(tolower($1), q) == 1 { print $1 }' "$OBJECTS" "$CONST" | sort -u ;;
+      meridian) printf '%s\n' on off 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 ;;
+      nudge) printf '%s\n' N S E W ;;
+      zoom) printf '%s\n' 0 1 2 3 4 5 6 7 8 ;;
+      init) echo -y ;;
+    esac ;;
   _flipwatch)
     # (internal) background watcher started by goto: $2 RA, $3 DEC, $4 minutes after the meridian
     tra=$2; tdec=$3; flip=$4
@@ -505,16 +576,17 @@ case "$1" in
     [[ "$(st)" == *STATE=INIT* ]] || do_reset || { echo "reset to INIT failed"; exit 1; }
     rm -f "$NOTHOME"
     echo "init done: $(st)"
-    # Reminder: compare the Starbook clock with the Pi's (both local time, UTC-7).
+    site refresh >/dev/null                          # re-read the site from the Starbook
+    # Reminder: compare the Starbook clock with the Pi's (both in the Starbook's time zone).
     sbt=$(sbq GETTIME.ASP)
     sbs=$(echo "$sbt" | awk '{ printf "%04d-%02d-%02d %02d:%02d:%02d", $1, $2, $3, $4, $5, $6 }')
-    sbe=$(TZ=Etc/GMT+7 date -d "$sbs" +%s 2>/dev/null)
-    diff=$(( ${sbe:-0} - $(date +%s) ))
+    sbe=$(date -u -d "$sbs" +%s 2>/dev/null) && sbe=$(awk -v t="$sbe" -v z="$(tzh)" 'BEGIN { printf "%d", t - z * 3600 }')
+    diff=$(( ${sbe:-0} - $(now) ))
     ntp=$(timedatectl show -p NTPSynchronized --value 2>/dev/null)
     echo
     echo "Reminder - the clock was NOT changed:"
     echo "  Starbook clock: $sbs"
-    echo "  Pi clock:       $(TZ=Etc/GMT+7 date '+%F %T')   (internet time sync: ${ntp:-unknown})"
+    echo "  Pi clock:       $(local_date '+%F %T')   (internet time sync: ${ntp:-unknown}; Starbook time zone UTC$( [[ $(tzh) == -* ]] || echo +)$(tzh))"
     if [ -z "$sbe" ]; then
       echo "  Could not read the Starbook clock."
     elif [ ${diff#-} -le 60 ]; then

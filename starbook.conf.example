@@ -1,0 +1,21 @@
+# Example settings for sb.sh. Copy to ~/.config/starbook.conf and edit; every line is optional.
+# Only SB_*=value lines are read (nothing is executed). Environment variables override this file.
+
+# The Starbook's address (default 169.254.1.1) and this computer's address on that network.
+#SB_HOST=169.254.1.1
+#SB_PI_ADDR=169.254.1.2
+
+# Network interface to the Starbook; if set, "sb indi-start" checks SB_PI_ADDR is on it.
+#SB_IFACE=enx6c5ab0b3b739
+
+# Site: normally read from the Starbook (its location and time-zone settings) and cached.
+# Set all three to override: latitude (deg, north +), longitude (deg, east +), time zone (hours from UTC).
+#SB_LAT=39.4667
+#SB_LON=-119.8167
+#SB_TZ=-7
+
+# Where flags, the last target and the meridian log are kept (default ~/.local/state/starbook).
+#SB_STATE=/home/you/.local/state/starbook
+
+# A different list of named targets for "sb goto NAME".
+#SB_OBJECTS=/home/you/my_objects.txt
