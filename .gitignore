@@ -2,3 +2,6 @@
 *.bak-*
 sb_proxy.py
 .target
+.meridian
+.meridian.pid
+meridian.log

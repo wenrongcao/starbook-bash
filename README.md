@@ -105,9 +105,9 @@ Run `bash sb.sh` with no arguments to print this list.
 
 | Command | What it does |
 |---|---|
-| `star NAME` | Slew to a target from `stars.txt` and watch the slew until it arrives; aborts after 180 s. The name is matched without regard to case |
-| `track [MIN]` | Keep tracking the last GoTo target through the meridian with no manual step: at MIN minutes after the meridian (default 5, 1-15) it re-sends the GoTo and the Starbook flips by itself. Beeps if a Starbook prompt appears anyway. Leave it running (Ctrl-C to stop) |
-| `goto RA DEC` | Slew to coordinates: RA in hours as `hh:mm:ss`, Dec in decimal degrees, e.g. `goto 00:42:44 +41.2692`. Returns immediately (use `status` to follow it) |
+| `star NAME` | Slew to a target from `stars.txt` and watch the slew until it arrives; aborts after 180 s. The name is matched without regard to case. Flips automatically at the meridian (see `meridian`) |
+| `goto RA DEC` | Slew to coordinates: RA in hours as `hh:mm:ss`, Dec in decimal degrees, e.g. `goto 00:42:44 +41.2692`. Returns immediately (use `status` to follow it). Also flips automatically at the meridian |
+| `meridian [on\|off\|MIN]` | Automatic meridian flip for `star`/`goto`: `on` (default) re-sends the GoTo MIN minutes after the target crosses the meridian (default 5, 1-15), from a background watcher that logs to `meridian.log`; `off` leaves the flip to you (press Yes on the Starbook). No argument shows the setting and any running watcher. No motion by itself |
 | `nudge N\|S\|E\|W SEC [SPEED]` | Short manual move to centre a star: up to 10 s, speed 1-8 (default 3) |
 | `park` | Slew to the home position and watch the slew. Tracking continues at home; follow with `init` to stop the motors |
 | `abort` | Stop all motion (slews and manual moves) |
@@ -147,7 +147,6 @@ Names are one word (use `_` for spaces) and are matched without regard to case. 
 bash sb.sh reset          # after power-up, mount at home: INIT, clock set, not-at-home flag cleared
 bash sb.sh unpark         # enter Scope mode (RA starts tracking, no slew)
 bash sb.sh star Vega      # slew to Vega
-bash sb.sh track          # optional: keep tracking through the meridian (flips at +5 min)
 bash sb.sh park           # back to home
 bash sb.sh init           # both motors stop
 ```
@@ -166,8 +165,10 @@ bash sb.sh init           # both motors stop
 - **Meridian:** the Starbook tracks about 21 min past the meridian, then stops tracking and shows
   "Telescope will REVERSE!!" (Yes/No). While that prompt is up it refuses every LAN command
   (`ERROR:ILLEGAL STATE`), so it can't be answered remotely. A GoTo sent after the meridian but before
-  that limit makes the Starbook flip by itself (tested: RA axis 180°, no prompt); `sb.sh track` does
-  that at +5 min.
+  that limit makes the Starbook flip by itself, since it picks the pier side from the target's hour
+  angle. So after a GoTo to a target east of the meridian, `sb.sh` starts a background watcher that
+  re-sends the GoTo 5 min after the meridian (tested on the mount: RA axis 180°, no prompt).
+  `park`, `init`, `reset`, `abort` and a new GoTo stop the watcher.
 - Speed and chart zoom are the same setting (`SETSPEED` 0-8: 0 closest/slowest, 8 whole sky/fastest;
   the Starbook also answers OK to out-of-range values). After a restart the chart is garbled (labels
   stacked on top of each other, no stars) until the first `SETSPEED`; `unpark` sets zoom 6 to fix it.

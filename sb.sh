@@ -8,9 +8,9 @@
 #   sb.sh homed            confirm the mount is at home (after init away from home, or a power cut)
 #   sb.sh unpark           leave INIT/park and enter Scope mode        (no motion)
 #   sb.sh goto RA DEC      slew; RA hh:mm:ss (hours), DEC decimal degrees, e.g. goto 00:42:44 +41.2692  (MOVES)
-#   sb.sh star NAME        slew to a star from stars.txt (e.g. Vega), watch it, auto-abort  (MOVES)
+#   sb.sh star NAME        slew to a star from stars.txt, watch it, auto-abort; auto meridian flip  (MOVES)
 #   sb.sh stars            list the stars in stars.txt
-#   sb.sh track [MIN]      keep tracking the last target; flip MIN min after the meridian  (MOVES)
+#   sb.sh meridian [on|off|MIN]  auto meridian flip after GoTo/star: on (default), off, or MIN after (default 5)
 #   sb.sh nudge N|S|E|W SEC [SPEED]  short move to centre a star (1-8, default 3)  (MOVES)
 #   sb.sh align            last GoTo target is now centred -> add alignment star
 #   sb.sh zoom N           chart zoom 0 (closest) .. 8 (whole sky); also the manual-move speed
@@ -29,7 +29,10 @@ SB=http://169.254.1.1
 LOG=/tmp/indiserver-starbook.log
 NOTHOME=$HOME/starbook/.not_at_home   # set when the Starbook no longer knows the mount is at home
 STARS=${SB_STARS:-$(dirname "$SELF")/stars.txt}   # star list for "star NAME"; override with SB_STARS=file
-TARGET=$HOME/starbook/.target          # last GoTo target "RA_hours DEC_deg", used by "track"
+TARGET=$HOME/starbook/.target          # last GoTo target "RA_hours DEC_deg"
+MERIDIAN=$HOME/starbook/.meridian      # meridian-flip setting: "on MIN" (default "on 5") or "off MIN"
+FLIPPID=$HOME/starbook/.meridian.pid   # background meridian-flip watcher
+FLIPLOG=$HOME/starbook/meridian.log    # its log
 
 get() { indi_getprop -t 3 -1 "$DEV.$1" 2>/dev/null; }
 set_() { indi_setprop "$DEV.$1"; }
@@ -98,6 +101,31 @@ hour_angle() {
     lst = (18.697374558 + 24.06570982441908 * d + lon / 15) % 24
     ha = lst - ra; if (ha > 12) ha -= 24; if (ha < -12) ha += 24
     printf "%.4f\n", ha }'
+}
+
+# Meridian flip. The Starbook tracks ~21 min past the meridian, then stops and shows
+# "Telescope will REVERSE!!" (Yes/No), and refuses every LAN command until someone presses Yes.
+# A GoTo sent after the meridian but before that limit makes it flip by itself, so after a GoTo
+# to a target east of the meridian a background watcher re-sends it MIN minutes after the
+# meridian (default 5). "meridian off" leaves the flip to you (press Yes on the Starbook).
+meridian_get() {   # prints "on|off MIN"
+  local m n; read -r m n 2>/dev/null <"$MERIDIAN"
+  [[ "$m" == on || "$m" == off ]] || m=on; [[ "$n" =~ ^[0-9]+$ ]] || n=5
+  echo "$m $n"
+}
+flip_stop() {   # stop a running watcher (new target, park, init, reset, abort)
+  local pid; [ -r "$FLIPPID" ] && read -r pid <"$FLIPPID"
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && kill "$pid" 2>/dev/null && echo "meridian flip watcher stopped"
+  rm -f "$FLIPPID"
+}
+flip_start() {   # $1 RA hours, $2 DEC deg: start the watcher if the target is still east of the meridian
+  local m n ha; read -r m n <<<"$(meridian_get)"
+  [ "$m" = on ] || { echo "meridian flip: off (press Yes on the Starbook when it asks)"; return; }
+  ha=$(hour_angle "$1")
+  if awk "BEGIN{exit !($ha >= 0)}"; then echo "meridian flip: not needed (target already west of the meridian)"; return; fi
+  setsid "$SELF" _flipwatch "$1" "$2" "$n" >>"$FLIPLOG" 2>&1 </dev/null &
+  echo $! >"$FLIPPID"
+  echo "meridian flip: automatic, $n min after the meridian (in $(awk "BEGIN{printf \"%.0f\", ($n / 60 - $ha) * 60}") min); log: $FLIPLOG"
 }
 
 # ---- Starbook screen in the terminal -------------------------------------------------
@@ -259,10 +287,12 @@ case "$1" in
       ra = ra % 24; if (ra < 0) ra += 24; rm = int(ra * 600 + 0.5); rh = int(rm / 600) % 24; rm = rm % 600
       s = (dec < 0) ? "-" : ""; d = (dec < 0) ? -dec : dec; dm = int(d * 60 + 0.5)
       printf "RA=%02d+%02d.%d&DEC=%s%03d+%02d", rh, int(rm / 10), rm % 10, s, int(dm / 60), dm % 60 }')
+    [ -n "$SB_NOFLIP" ] || flip_stop >/dev/null      # not when the watcher itself re-sends the GoTo
     r=$(sbq "GOTORADEC?$q")
     echo "GOTORADEC?$q -> $r  (abort: $0 abort)"
-    [[ "$r" == OK* ]] && echo "$2 $3" >"$TARGET"
-    [[ "$r" == OK* ]] ;;
+    [[ "$r" == OK* ]] || exit 1
+    echo "$2 $3" >"$TARGET"
+    [ -n "$SB_NOFLIP" ] || flip_start "$2" "$3" ;;
   stars)
     # List the targets in the star file
     [ -r "$STARS" ] || { echo "star file not found: $STARS"; exit 1; }
@@ -283,37 +313,51 @@ case "$1" in
     [[ "$(st)" == *STATE=SCOPE* ]] || { echo "Starbook not in SCOPE mode - not slewing"; exit 1; }
     "$SELF" goto "$ra" "$dec" || { echo "Starbook rejected the GoTo - not slewing"; exit 1; }
     watch_slew ;;
-  track)
-    # Keep tracking the last GoTo target through the meridian without the "Telescope will REVERSE!!"
-    # prompt: the Starbook tracks ~21 min past the meridian and then stops and waits for Yes, which
-    # can't be answered over the LAN. So re-send the GoTo at MIN minutes past the meridian
-    # (default 5); the Starbook then flips by itself.   (MOVES)
-    flip=${2:-5}
-    [[ "$flip" =~ ^[0-9]+$ ]] && [ "$flip" -ge 1 ] && [ "$flip" -le 15 ] || { echo "usage: $0 track [MIN]   (flip MIN minutes after the meridian, 1-15, default 5)"; exit 1; }
-    [ -r "$TARGET" ] || { echo "no target yet - run '$0 star NAME' or '$0 goto RA DEC' first"; exit 1; }
-    read -r tra tdec <"$TARGET"
-    guard
-    [[ "$(st)" == *STATE=SCOPE* || "$(st)" == *STATE=CHART* ]] || { echo "Starbook is not tracking ($(st)) - GoTo the target first"; exit 1; }
-    echo "tracking RA $tra h, DEC $tdec deg; flip $flip min after the meridian (Ctrl-C to stop watching)"
-    flipped=0
-    ha=$(hour_angle "$tra"); awk "BEGIN{exit !($ha > $flip / 60)}" && flipped=1   # already past: assume done
+  meridian)
+    # Automatic meridian flip for GoTo targets: meridian [on|off|MIN]
+    read -r m n <<<"$(meridian_get)"
+    case "$2" in
+      "") ;;
+      on)  m=on ;;
+      off) m=off; flip_stop ;;
+      *) [[ "$2" =~ ^[0-9]+$ ]] && [ "$2" -ge 1 ] && [ "$2" -le 15 ] || { echo "usage: $0 meridian [on|off|MIN]   (MIN = minutes after the meridian, 1-15)"; exit 1; }
+         m=on; n=$2 ;;
+    esac
+    [ -n "$2" ] && echo "$m $n" >"$MERIDIAN"
+    if [ "$m" = on ]; then echo "meridian flip: on, $n min after the meridian"; else echo "meridian flip: off (press Yes on the Starbook when it asks)"; fi
+    if [ -r "$FLIPPID" ] && read -r pid <"$FLIPPID" && kill -0 "$pid" 2>/dev/null && [ -r "$TARGET" ]; then
+      read -r tra _ <"$TARGET"; ha=$(hour_angle "$tra")
+      echo "watcher running for RA $tra h: target $(awk "BEGIN{printf \"%+.1f\", $ha * 60}") min from the meridian"
+    fi ;;
+  _flipwatch)
+    # (internal) background watcher started by goto: $2 RA, $3 DEC, $4 minutes after the meridian
+    tra=$2; tdec=$3; flip=$4
+    echo "$(date '+%F %T') watching RA $tra DEC $tdec: flip $flip min after the meridian"
     while :; do
+      [ "$(cat "$TARGET" 2>/dev/null)" = "$tra $tdec" ] || { echo "$(date +%T) target changed - exiting"; break; }
       s=$(st); ha=$(hour_angle "$tra")
-      if [ -z "$s" ]; then echo "$(date +%T) Starbook not answering"; sleep 30; continue; fi
-      printf '%s  HA %+.1f min  %s\n' "$(date +%T)" "$(awk "BEGIN{print $ha * 60}")" "$s"
       case "$s" in
-        *STATE=USER*) printf '\a'; echo "  !! the Starbook is showing a prompt (e.g. 'Telescope will REVERSE!!') - press Yes on the Starbook" ;;
-        *STATE=INIT*) echo "  Starbook restarted (power?) - position lost, stopping"; echo "restart during track $(date +%T)" >"$NOTHOME"; exit 2 ;;
+        "") ;;                                                      # no reply: try again
+        *STATE=INIT*) echo "$(date +%T) Starbook restarted - exiting"; echo "restart while tracking $(date +%T)" >"$NOTHOME"; break ;;
+        *STATE=USER*) echo "$(date +%T) Starbook is showing a prompt - press Yes on the Starbook" ;;
+        *GOTO=0*)
+          if awk "BEGIN{exit !($ha >= $flip / 60)}"; then
+            read -r x0 _ <<<"$(xy)"
+            echo "$(date +%T) HA $(awk "BEGIN{printf \"%+.1f\", $ha * 60}") min: re-sending the GoTo so the Starbook flips"
+            if SB_NOFLIP=1 "$SELF" goto "$tra" "$tdec" && watch_slew; then
+              read -r x1 _ <<<"$(xy)"
+              if [ -n "$x0" ] && [ -n "$x1" ]; then
+                echo "$(date +%T) flip done: RA axis moved $(( x1 - x0 )) counts ($(awk "BEGIN{printf \"%.0f\", ($x1 - $x0) / 24000}") deg)"
+              else echo "$(date +%T) flip done (encoders not readable)"; fi
+            else
+              echo "$(date +%T) FLIP FAILED - check the mount (power? see messages above)"
+            fi
+            break
+          fi ;;
       esac
-      if [ $flipped = 0 ] && [[ $s == *GOTO=0*STATE=SCOPE* || $s == *GOTO=0*STATE=CHART* ]] && awk "BEGIN{exit !($ha >= $flip / 60)}"; then
-        echo "  target is $flip min past the meridian - re-sending the GoTo so the Starbook flips"
-        read -r x0 _ <<<"$(xy)"
-        "$SELF" goto "$tra" "$tdec" && watch_slew && flipped=1
-        read -r x1 _ <<<"$(xy)"
-        [ $flipped = 1 ] && echo "  RA axis moved $(( x1 - x0 )) counts ($(awk "BEGIN{printf \"%.0f\", ($x1 - $x0) / 24000}") deg)"
-      fi
       sleep 30
-    done ;;
+    done
+    rm -f "$FLIPPID" ;;
   nudge)
     # Short manual move to centre a star: nudge N|S|E|W SECONDS [SPEED 1-8, default 3]   (MOVES)
     dir=$(echo "$2" | tr a-z A-Z); secs=$3; speed=${4:-3}
@@ -332,6 +376,7 @@ case "$1" in
     # RESET the Starbook to its INIT screen where the mount is now: both motors stop (no motion).
     # INIT forgets the position. If the mount is not at home (encoders > 1 deg from home),
     # unpark/goto are blocked until it is moved home by hand and "homed" is run.
+    flip_stop
     [[ "$(st)" == *STATE=INIT* ]] && { echo "already in INIT"; exit 0; }
     read -r x y <<<"$(xy)"
     [ -n "$x" ] || { echo "could not read encoders - not resetting"; exit 1; }
@@ -349,6 +394,7 @@ case "$1" in
       read -r -p "Is the mount physically at home (counterweight down, tube level)? [y/N] " a
       [[ "$a" == [yY]* ]] || { echo "not reset - move the mount home by hand first"; exit 1; }
     fi
+    flip_stop
     pkill -x indiserver && echo "indiserver stopped"
     echo -n "waiting for the Starbook"
     for _ in $(seq 1 60); do [ -n "$(st)" ] && break; echo -n "."; sleep 3; done; echo
@@ -358,11 +404,13 @@ case "$1" in
     rm -f "$NOTHOME"
     echo "reset done: $(st)  clock $(sbq GETTIME.ASP)" ;;
   abort)
+    flip_stop
     set_ 'TELESCOPE_ABORT_MOTION.ABORT=On' 2>/dev/null
     sbq STOP >/dev/null; move      # belt and braces
     echo "abort sent" ;;
   park)
     guard
+    flip_stop
     echo "GOHOME -> $(sbq 'GOHOME?HOME=0' | cut -c1-2)"
     watch_slew ;;
   indi-stop)
