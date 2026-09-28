@@ -7,10 +7,10 @@
 #   sb.sh settime          set Starbook clock from the Pi (Starbook must be at INIT screen)
 #   sb.sh homed            confirm the mount is at home (after a power cut during a slew)
 #   sb.sh unpark           leave INIT/park and enter Scope mode        (no motion)
-#   sb.sh goto RA DEC      slew; RA hh:mm:ss (hours), DEC decimal degrees, e.g. goto 00:42:44 +41.2692  (MOVES)
-#   sb.sh star NAME        slew to a star from stars.txt, watch it, auto-abort; auto meridian flip  (MOVES)
-#   sb.sh stars [TEXT]     list targets in stars.txt (173 stars to mag 3, all Messier); TEXT filters
-#   sb.sh meridian [on|off|MIN]  auto meridian flip after GoTo/star: on (default), off, or MIN after (default 5)
+#   sb.sh goto NAME|RA DEC slew to an object from sky_objects.txt (goto Vega, goto M4) or to
+#                          coordinates (goto 00:42:44 +41.2692); watched; auto meridian flip  (MOVES)
+#   sb.sh objects [TEXT]   list sky_objects.txt (173 stars to mag 3, all Messier); TEXT filters
+#   sb.sh meridian [on|off|MIN]  auto meridian flip after goto: on (default), off, or MIN after (default 5)
 #   sb.sh nudge N|S|E|W SEC [SPEED]  short move to centre a star (1-8, default 3)  (MOVES)
 #   sb.sh align            last GoTo target is now centred -> add alignment star
 #   sb.sh zoom N           chart zoom 0 (closest) .. 8 (whole sky); also the manual-move speed
@@ -27,7 +27,7 @@ IFACE=enx6c5ab0b3b739
 SB=http://169.254.1.1
 LOG=/tmp/indiserver-starbook.log
 NOTHOME=$HOME/starbook/.not_at_home   # set when the Starbook no longer knows the mount is at home
-STARS=${SB_STARS:-$(dirname "$SELF")/stars.txt}   # star list for "star NAME"; override with SB_STARS=file
+OBJECTS=${SB_OBJECTS:-$(dirname "$SELF")/sky_objects.txt}   # named targets for "goto NAME"; override with SB_OBJECTS=file
 TARGET=$HOME/starbook/.target          # last GoTo target "RA_hours DEC_deg"
 CONST=$(dirname "$SELF")/constellations.txt   # IAU constellation boundaries (B1875) + names
 MERIDIAN=$HOME/starbook/.meridian      # meridian-flip setting: "on MIN" (default "on 5") or "off MIN"
@@ -56,7 +56,19 @@ todec() {
     printf "%.6f\n", x }'
 }
 
+# True if the Starbook's reported position ($1 = GETSTATUS reply) is within ~0.1 deg of RA $2 h / DEC $3 deg.
+near_target() {
+  echo "$1" | awk -v ra="$2" -v dec="$3" '{
+    if (!match($0, /RA=[0-9]+\+[0-9.]+/)) exit 1; split(substr($0, RSTART + 3, RLENGTH - 3), r, "+")
+    if (!match($0, /DEC=-?[0-9]+\+[0-9]+/)) exit 1; dd = substr($0, RSTART + 4, RLENGTH - 4); split(dd, d, "+")
+    cr = r[1] + r[2] / 60; cd = (dd ~ /^-/ ? -1 : 1) * ((d[1] < 0 ? -d[1] : d[1]) + d[2] / 60)
+    dra = cr - ra; if (dra > 12) dra -= 24; if (dra < -12) dra += 24
+    k = atan2(0, -1) / 180; x = dra * 15 * cos(dec * k); y = cd - dec
+    exit !(x * x + y * y < 0.01) }'
+}
+
 # Watch a GoTo/GoHome until the Starbook reports it finished; abort after 180 s.
+# Optional $1 $2 = target RA/DEC: if no slew starts because the scope is already there, say so.
 watch_slew() {
   local t0=$SECONDS started=0 lost=0 s
   while [ $((SECONDS - t0)) -lt 180 ]; do
@@ -69,6 +81,7 @@ watch_slew() {
       [[ $s == *STATE=INIT* ]] && { echo "STARBOOK RESET (power loss?) - mount position is now unknown"; echo "reset mid-slew $(date +%T)" >"$NOTHOME"; return 2; }
       [[ $s == *GOTO=1* ]] && started=1
       [[ $started = 1 && $s == *GOTO=0* ]] && { echo "arrived"; return 0; }
+      [[ $started = 0 && -n "$1" && $((SECONDS - t0)) -ge 4 ]] && near_target "$s" "$1" "$2" && { echo "already on target"; return 0; }
       [[ $started = 0 && $((SECONDS - t0)) -gt 15 ]] && { echo "slew never started"; return 1; }
     fi
     sleep 2
@@ -101,6 +114,20 @@ hour_angle() {
     lst = (18.697374558 + 24.06570982441908 * d + lon / 15) % 24
     ha = lst - ra; if (ha > 12) ha -= 24; if (ha < -12) ha += 24
     printf "%.4f\n", ha }'
+}
+
+# Send one GoTo (RA hours, DEC degrees) and remember it as the target. Same format as the INDI
+# driver: RA=HH+MM.t&DEC=[-]DDD+MM (works without indiserver). Returns 0 if the Starbook accepted.
+goto_send() {
+  local q r
+  q=$(awk -v ra="$1" -v dec="$2" 'BEGIN{
+    ra = ra % 24; if (ra < 0) ra += 24; rm = int(ra * 600 + 0.5); rh = int(rm / 600) % 24; rm = rm % 600
+    s = (dec < 0) ? "-" : ""; d = (dec < 0) ? -dec : dec; dm = int(d * 60 + 0.5)
+    printf "RA=%02d+%02d.%d&DEC=%s%03d+%02d", rh, int(rm / 10), rm % 10, s, int(dm / 60), dm % 60 }')
+  r=$(sbq "GOTORADEC?$q")
+  echo "GOTORADEC?$q -> $r  (abort: $0 abort)"
+  [[ "$r" == OK* ]] || return 1
+  echo "$1 $2" >"$TARGET"
 }
 
 # Meridian flip. The Starbook tracks ~21 min past the meridian, then stops and shows
@@ -346,44 +373,35 @@ case "$1" in
     [[ "$2" =~ ^[0-8]$ ]] || { echo "usage: $0 zoom N   (0 = closest .. 8 = whole sky; 6 = normal)"; exit 1; }
     echo "zoom $2 -> $(sbq "SETSPEED?speed=$2")" ;;
   goto)
+    # Slew to a named object (sky_objects.txt) or to coordinates, watch the slew (auto-abort after
+    # 180 s) and arm the automatic meridian flip.   goto NAME  |  goto RA DEC   (MOVES)
+    if [ $# -eq 2 ]; then
+      [ -r "$OBJECTS" ] || { echo "object file not found: $OBJECTS"; exit 1; }
+      radec=$(awk -v n="$2" '{ sub(/\r$/, "") } !/^[[:space:]]*(#|$)/ && tolower($1) == tolower(n) { print $2, $3; exit }' "$OBJECTS")
+      [ -n "$radec" ] || { echo "unknown object: $2 (not in $OBJECTS - see '$0 objects')"; exit 1; }
+      read -r ra_s dec_s <<<"$radec"; label="$2"
+    elif [ $# -eq 3 ]; then
+      ra_s=$2; dec_s=$3; label="target"
+    else
+      echo "usage: $0 goto NAME   |   $0 goto RA DEC   (RA hh:mm:ss hours, DEC decimal degrees)"; exit 1
+    fi
+    ra=$(todec "$ra_s" 24); dec=$(todec "$dec_s" 90)
+    [ -n "$ra" ] && [ -n "$dec" ] || { echo "bad coordinates for $label: RA=$ra_s DEC=$dec_s (RA hh:mm:ss 0-24 h, DEC decimal degrees -90..90)"; exit 1; }
     guard
-    [ $# -eq 3 ] || { echo "usage: $0 goto RA DEC   (RA hh:mm:ss hours, DEC decimal degrees)"; exit 1; }
-    ra=$(todec "$2" 24); dec=$(todec "$3" 90)
-    [ -n "$ra" ] && [ -n "$dec" ] || { echo "bad coordinates: RA=$2 DEC=$3 (RA hh:mm:ss 0-24 h, DEC decimal degrees -90..90)"; exit 1; }
-    set -- "$1" "$ra" "$dec"
-    # Direct HTTP, same format as the INDI driver: RA=HH+MM.t&DEC=[-]DDD+MM (works without indiserver)
-    q=$(awk -v ra="$2" -v dec="$3" 'BEGIN{
-      ra = ra % 24; if (ra < 0) ra += 24; rm = int(ra * 600 + 0.5); rh = int(rm / 600) % 24; rm = rm % 600
-      s = (dec < 0) ? "-" : ""; d = (dec < 0) ? -dec : dec; dm = int(d * 60 + 0.5)
-      printf "RA=%02d+%02d.%d&DEC=%s%03d+%02d", rh, int(rm / 10), rm % 10, s, int(dm / 60), dm % 60 }')
-    [ -n "$SB_NOFLIP" ] || flip_stop >/dev/null      # not when the watcher itself re-sends the GoTo
-    r=$(sbq "GOTORADEC?$q")
-    echo "GOTORADEC?$q -> $r  (abort: $0 abort)"
-    [[ "$r" == OK* ]] || exit 1
-    echo "$2 $3" >"$TARGET"
-    [ -n "$SB_NOFLIP" ] || flip_start "$2" "$3" ;;
-  stars)
-    # List the targets in the star file; optional TEXT filters names and comments (e.g. galaxy, Orion)
-    [ -r "$STARS" ] || { echo "star file not found: $STARS"; exit 1; }
+    echo "$label: RA $ra_s  DEC $dec_s  (the Starbook refuses targets below its horizon)"
+    [[ "$(st)" == *STATE=SCOPE* || "$(st)" == *STATE=CHART* ]] || "$SELF" unpark >/dev/null
+    [[ "$(st)" == *STATE=SCOPE* || "$(st)" == *STATE=CHART* ]] || { echo "Starbook not in Scope mode - not slewing"; exit 1; }
+    flip_stop >/dev/null
+    goto_send "$ra" "$dec" || { echo "Starbook rejected the GoTo - not slewing"; exit 1; }
+    flip_start "$ra" "$dec"
+    watch_slew "$ra" "$dec" ;;
+  objects)
+    # List the targets in sky_objects.txt; optional TEXT filters names and notes (e.g. galaxy, Orion)
+    [ -r "$OBJECTS" ] || { echo "object file not found: $OBJECTS"; exit 1; }
     awk -v q="$2" '{ sub(/\r$/, "") } !/^[[:space:]]*(#|$)/ && (q == "" || index(tolower($0), tolower(q))) {
         c = ""; if ((k = index($0, "#")) > 0) c = substr($0, k + 1); sub(/^ */, "", c)
         printf "  %-18s RA %-11s DEC %+9.4f  %s\n", $1, $2, $3, c; n++ }
-      END { printf "%d target(s)%s in %s\n", n, (q == "" ? "" : " matching \"" q "\""), FILENAME }' "$STARS" ;;
-  star)
-    # Slew to a target from the star file and watch the slew; aborts after 180 s.   (MOVES)
-    [ -r "$STARS" ] || { echo "star file not found: $STARS"; exit 1; }
-    [ $# -eq 2 ] || { echo "usage: $0 star NAME   (see '$0 stars' for the list in $STARS)"; exit 1; }
-    radec=$(awk -v n="$2" '{ sub(/\r$/, "") } !/^[[:space:]]*(#|$)/ && tolower($1) == tolower(n) { print $2, $3; exit }' "$STARS")
-    [ -n "$radec" ] || { echo "unknown star: $2 (not in $STARS - see '$0 stars')"; exit 1; }
-    read -r ra_s dec_s <<<"$radec"
-    ra=$(todec "$ra_s" 24); dec=$(todec "$dec_s" 90)
-    [ -n "$ra" ] && [ -n "$dec" ] || { echo "bad coordinates for $2 in $STARS: RA=$ra_s DEC=$dec_s (RA hh:mm:ss 0-24 h, DEC decimal degrees -90..90)"; exit 1; }
-    guard
-    echo "$2: RA $ra_s  DEC $dec_s  (the Starbook refuses targets below its horizon)"
-    [[ "$(st)" == *STATE=SCOPE* ]] || "$SELF" unpark >/dev/null
-    [[ "$(st)" == *STATE=SCOPE* ]] || { echo "Starbook not in SCOPE mode - not slewing"; exit 1; }
-    "$SELF" goto "$ra" "$dec" || { echo "Starbook rejected the GoTo - not slewing"; exit 1; }
-    watch_slew ;;
+      END { printf "%d object(s)%s in %s\n", n, (q == "" ? "" : " matching \"" q "\""), FILENAME }' "$OBJECTS" ;;
   meridian)
     # Automatic meridian flip for GoTo targets: meridian [on|off|MIN]
     read -r m n <<<"$(meridian_get)"
@@ -415,7 +433,7 @@ case "$1" in
           if awk "BEGIN{exit !($ha >= $flip / 60)}"; then
             read -r x0 _ <<<"$(xy)"
             echo "$(date +%T) HA $(awk "BEGIN{printf \"%+.1f\", $ha * 60}") min: re-sending the GoTo so the Starbook flips"
-            if SB_NOFLIP=1 "$SELF" goto "$tra" "$tdec" && watch_slew; then
+            if goto_send "$tra" "$tdec" && watch_slew; then
               read -r x1 _ <<<"$(xy)"
               if [ -n "$x0" ] && [ -n "$x1" ]; then
                 echo "$(date +%T) flip done: RA axis moved $(( x1 - x0 )) counts ($(awk "BEGIN{printf \"%.0f\", ($x1 - $x0) / 24000}") deg)"
@@ -481,7 +499,7 @@ case "$1" in
       echo "  To set it from the Pi, run now, before 'unpark' (it only works on the startup screen):"
       echo "    $0 settime"
     fi
-    echo "Next: $0 unpark, then $0 star NAME" ;;
+    echo "Next: $0 unpark, then $0 goto NAME" ;;
   abort)
     flip_stop
     set_ 'TELESCOPE_ABORT_MOTION.ABORT=On' 2>/dev/null

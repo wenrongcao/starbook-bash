@@ -1,4 +1,4 @@
-# Targets for "sb.sh star NAME".
+# Named targets for "sb.sh goto NAME" (list them with "sb.sh objects [TEXT]").
 # One per line:  NAME  RA  DEC   [# comment]   (J2000)
 #   - NAME is one word, matched without regard to case (use _ instead of spaces, e.g. Andromeda_Galaxy)
 #   - RA  in hours, hh:mm:ss (0-24 h),                e.g. 18:36:56.3 = 18h 36m 56.3s

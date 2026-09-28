@@ -10,7 +10,7 @@ The Starbook is controlled only over LAN, through URL commands to its built-in w
 ![Starbook screen captured with sb.sh screen: Scope mode, pointing at Sirius](docs/starbook-screen.png)
 
 *The Starbook's screen as `bash sb.sh screen` shows it in the terminal (TUI) over SSH, after
-`bash sb.sh star Sirius`: the real 320x240 image, fetched over the LAN and drawn with the Kitty
+`bash sb.sh goto Sirius`: the real 320x240 image, fetched over the LAN and drawn with the Kitty
 graphics protocol in Ghostty.*
 
 What the TUI view needs:
@@ -48,7 +48,7 @@ because those programs only talk through an INDI server.
 | Command | Needs INDI? |
 |---|---|
 | `status`, `settime`, `init`, `homed` | No |
-| `unpark`, `goto`, `star`, `nudge`, `align` | No |
+| `unpark`, `goto`, `objects`, `nudge`, `align` | No |
 | `park`, `abort` | No |
 | `indi-start`, `indi-stop` | **Yes**, they only start and stop the INDI server itself |
 
@@ -93,7 +93,7 @@ Run `bash sb.sh` with no arguments to print this list.
 | `status` | Show state (INIT/SCOPE/CHART/USER, and "slewing" during a GoTo), RA/Dec, altitude and azimuth (computed on the Pi from RA/Dec, clock and site; azimuth from north, with the Starbook screen's from-south value alongside), the constellation it points at, encoder counts, the Starbook's clock next to the Pi's, firmware, the not-at-home flag, and whether INDI is running. Also the meridian flip: setting, current target and its distance from the meridian, whether the watcher is running with a countdown and the clock time of the flip, and the last flip result |
 | `settime` | Set the Starbook's clock from the Pi. Only works in INIT (the startup screen), so run it after `init` and before `unpark`. Make sure the Pi's own clock is right first (`date`), e.g. if it has no internet |
 | `init [-y]` | Start clean: stop INDI and any meridian watcher, wait for the Starbook, reset it to INIT (both motors stop), clear the not-at-home flag. Asks you to confirm the mount is at home; `-y` skips the question. Does **not** change the clock: it prints the Starbook's and the Pi's clocks (and whether the Pi is internet-synced) and reminds you to run `settime` if they differ |
-| `stars [TEXT]` | List the targets in `stars.txt` with their notes; TEXT filters names and notes, e.g. `stars galaxy`, `stars Orion`, `stars M4` |
+| `objects [TEXT]` | List the targets in `sky_objects.txt` with their notes; TEXT filters names and notes, e.g. `objects galaxy`, `objects Orion`, `objects M4` |
 | `homed` | Confirm the mount is at home after moving it there by hand (clears the not-at-home flag) |
 | `unpark` | Leave INIT and enter Scope mode (`START`), then set chart zoom 6. The RA motor starts tracking; nothing slews. Assumes the mount is at home |
 | `zoom N` | Set the Starbook's chart zoom: 0 (closest) to 8 (whole sky), 6 is normal. The same setting is the speed of manual moves (`nudge` changes it). No motion |
@@ -104,9 +104,8 @@ Run `bash sb.sh` with no arguments to print this list.
 
 | Command | What it does |
 |---|---|
-| `star NAME` | Slew to a target from `stars.txt` and watch the slew until it arrives; aborts after 180 s. The name is matched without regard to case. Flips automatically at the meridian (see `meridian`) |
-| `goto RA DEC` | Slew to coordinates: RA in hours as `hh:mm:ss`, Dec in decimal degrees, e.g. `goto 00:42:44 +41.2692`. Returns immediately (use `status` to follow it). Also flips automatically at the meridian |
-| `meridian [on\|off\|MIN]` | Automatic meridian flip for `star`/`goto`: `on` (default) re-sends the GoTo MIN minutes after the target crosses the meridian (default 5, 1-15), from a background watcher that logs to `meridian.log`; `off` leaves the flip to you (press Yes on the Starbook). No argument shows the setting and any running watcher. No motion by itself |
+| `goto NAME` / `goto RA DEC` | Slew to a named object from `sky_objects.txt` (`goto Vega`, `goto M4`; case-insensitive) or to coordinates: RA in hours as `hh:mm:ss`, Dec in decimal degrees (`goto 00:42:44 +41.2692`). Unparks if needed, watches the slew until it arrives (aborts after 180 s; says so if already on target) and arms the automatic meridian flip (see `meridian`) |
+| `meridian [on\|off\|MIN]` | Automatic meridian flip for `goto`: `on` (default) re-sends the GoTo MIN minutes after the target crosses the meridian (default 5, 1-15), from a background watcher that logs to `meridian.log`; `off` leaves the flip to you (press Yes on the Starbook). No argument shows the setting and any running watcher. No motion by itself |
 | `nudge N\|S\|E\|W SEC [SPEED]` | Short manual move to centre a star: up to 10 s, speed 1-8 (default 3) |
 | `park` | Slew to the home position and watch the slew. Tracking continues at home; follow with `init` to stop the motors |
 | `abort` | Stop all motion (slews and manual moves) |
@@ -127,13 +126,13 @@ Run `bash sb.sh` with no arguments to print this list.
 Commands that slew refuse to run while the not-at-home flag is set (after a power cut during a slew).
 Move the mount home by hand, then run `homed` or `init`.
 
-**Star list (`stars.txt`)**
+**Named objects (`sky_objects.txt`)**
 
-`star NAME` looks targets up in `stars.txt`, next to `sb.sh`. It ships with **all 173 stars brighter
+`goto NAME` looks targets up in `sky_objects.txt`, next to `sb.sh`. It ships with **all 173 stars brighter
 than magnitude 3.0** (Yale Bright Star Catalogue, CDS V/50; IAU star names, Bayer names otherwise) and
 **all 110 Messier objects** (OpenNGC; M102 as NGC 5866). Edit it to add or change targets: one per
 line, `NAME  RA  DEC` (J2000), with RA in hours as `hh:mm:ss` and Dec in decimal degrees; text after
-`#` is a note shown by `sb.sh stars`.
+`#` is a note shown by `sb.sh objects`.
 
 ```
 # NAME             RA (h:m:s)    DEC (deg)   # comment
@@ -141,8 +140,8 @@ Vega               18:36:56.3    +38.7836   # mag +0.03, Alpha Lyr, Lyra
 M31                00:42:44.4    +41.2691   # Andromeda Galaxy, galaxy, NGC 224, Andromeda
 ```
 
-Names are one word (use `_` for spaces) and are matched without regard to case (`star m31`).
-To use a different file: `SB_STARS=/path/to/list.txt bash sb.sh star NAME`.
+Names are one word (use `_` for spaces) and are matched without regard to case (`goto m31`).
+To use a different file: `SB_OBJECTS=/path/to/list.txt bash sb.sh goto NAME`.
 
 **Constellation (`constellations.txt`)**
 
@@ -159,7 +158,7 @@ that contains it.
 bash sb.sh init           # after power-up, mount at home: INIT, flag cleared, clock check printed
 bash sb.sh settime        # only if init says the Starbook clock is off
 bash sb.sh unpark         # enter Scope mode (RA starts tracking, no slew)
-bash sb.sh star Vega      # slew to Vega
+bash sb.sh goto Vega      # slew to Vega (or goto M31, or goto 18:36:56 +38.78)
 bash sb.sh park           # back to home
 bash sb.sh init           # at home again: both motors stop
 ```
