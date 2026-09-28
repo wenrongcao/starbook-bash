@@ -91,8 +91,8 @@ Run `bash sb.sh` with no arguments to print this list.
 | Command | What it does |
 |---|---|
 | `status` | Show state (INIT/SCOPE/CHART/USER, and "slewing" during a GoTo), RA/Dec, encoder counts, the Starbook's clock next to the Pi's, firmware, the not-at-home flag, and whether INDI is running |
-| `settime` | Set the Starbook's clock from the Pi. Only works in INIT (the startup screen) |
-| `init [-y]` | Start clean: stop INDI and any meridian watcher, wait for the Starbook, reset it to INIT (both motors stop), set the clock, clear the not-at-home flag. Asks you to confirm the mount is at home; `-y` skips the question |
+| `settime` | Set the Starbook's clock from the Pi. Only works in INIT (the startup screen), so run it after `init` and before `unpark`. Make sure the Pi's own clock is right first (`date`), e.g. if it has no internet |
+| `init [-y]` | Start clean: stop INDI and any meridian watcher, wait for the Starbook, reset it to INIT (both motors stop), clear the not-at-home flag. Asks you to confirm the mount is at home; `-y` skips the question. Does **not** change the clock: it prints the Starbook's and the Pi's clocks (and whether the Pi is internet-synced) and reminds you to run `settime` if they differ |
 | `stars` | List the targets in `stars.txt` |
 | `homed` | Confirm the mount is at home after moving it there by hand (clears the not-at-home flag) |
 | `unpark` | Leave INIT and enter Scope mode (`START`), then set chart zoom 6. The RA motor starts tracking; nothing slews. Assumes the mount is at home |
@@ -143,7 +143,8 @@ Names are one word (use `_` for spaces) and are matched without regard to case. 
 **Typical session**
 
 ```
-bash sb.sh init           # after power-up, mount at home: INIT, clock set, not-at-home flag cleared
+bash sb.sh init           # after power-up, mount at home: INIT, flag cleared, clock check printed
+bash sb.sh settime        # only if init says the Starbook clock is off
 bash sb.sh unpark         # enter Scope mode (RA starts tracking, no slew)
 bash sb.sh star Vega      # slew to Vega
 bash sb.sh park           # back to home
@@ -159,7 +160,7 @@ bash sb.sh init           # at home again: both motors stop
   (-> INIT, ~2 min restart) stops both motors.
 - The clock resets to 2000-01-01 at every power-up (weak backup battery); `SETTIME` only works in INIT.
   The Starbook refuses GoTos below its horizon (`ERROR:BELOW HORIZONE`), but that check uses its own
-  clock, so run `sb.sh init` or `sb.sh settime` after every power-up before slewing.
+  clock, so after every power-up check it (`sb.sh init` prints it) and run `sb.sh settime` if needed.
 - `ALIGN` ignores coordinates and only syncs to the last GoTo target.
 - **Meridian:** the Starbook tracks about 21 min past the meridian, then stops tracking and shows
   "Telescope will REVERSE!!" (Yes/No). While that prompt is up it refuses every LAN command

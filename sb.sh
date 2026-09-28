@@ -14,7 +14,7 @@
 #   sb.sh nudge N|S|E|W SEC [SPEED]  short move to centre a star (1-8, default 3)  (MOVES)
 #   sb.sh align            last GoTo target is now centred -> add alignment star
 #   sb.sh zoom N           chart zoom 0 (closest) .. 8 (whole sky); also the manual-move speed
-#   sb.sh init [-y]        start clean: INIT (motors stop), clock set, flags cleared; mount must be home
+#   sb.sh init [-y]        start clean: INIT (motors stop), flags cleared, clock check; mount must be home
 #   sb.sh screen [COLS]    show the Starbook screen in the terminal (24-bit colour)
 #   sb.sh watch [SEC]      redraw the Starbook screen every SEC seconds (default 5), Ctrl-C quits
 #   sb.sh abort            stop all motion
@@ -373,7 +373,8 @@ case "$1" in
     r=$(sbq ALIGN); echo "ALIGN -> $r"; [ "$r" = OK ] ;;
   init)
     # Start clean: stop INDI and any meridian watcher, Starbook to INIT (both motors stop),
-    # clock from the Pi, clear the not-at-home flag. The mount must be at home.
+    # clear the not-at-home flag. The mount must be at home. The clock is left alone: check the
+    # reminder and run "settime" yourself if needed (the Pi may have no internet time).
     if [ "$2" != -y ]; then
       read -r -p "Is the mount physically at home (counterweight down, tube level)? [y/N] " a
       [[ "$a" == [yY]* ]] || { echo "not done - move the mount home by hand first"; exit 1; }
@@ -384,9 +385,31 @@ case "$1" in
     for _ in $(seq 1 60); do [ -n "$(st)" ] && break; echo -n "."; sleep 3; done; echo
     [ -n "$(st)" ] || { echo "Starbook not answering - check its power and the LAN cable"; exit 1; }
     [[ "$(st)" == *STATE=INIT* ]] || do_reset || { echo "reset to INIT failed"; exit 1; }
-    "$SELF" settime
     rm -f "$NOTHOME"
-    echo "init done: $(st)  clock $(sbq GETTIME.ASP)" ;;
+    echo "init done: $(st)"
+    # Reminder: compare the Starbook clock with the Pi's (both local time, UTC-7).
+    sbt=$(sbq GETTIME.ASP)
+    sbs=$(echo "$sbt" | awk '{ printf "%04d-%02d-%02d %02d:%02d:%02d", $1, $2, $3, $4, $5, $6 }')
+    sbe=$(TZ=Etc/GMT+7 date -d "$sbs" +%s 2>/dev/null)
+    diff=$(( ${sbe:-0} - $(date +%s) ))
+    ntp=$(timedatectl show -p NTPSynchronized --value 2>/dev/null)
+    echo
+    echo "Reminder - the clock was NOT changed:"
+    echo "  Starbook clock: $sbs"
+    echo "  Pi clock:       $(TZ=Etc/GMT+7 date '+%F %T')   (internet time sync: ${ntp:-unknown})"
+    if [ -z "$sbe" ]; then
+      echo "  Could not read the Starbook clock."
+    elif [ ${diff#-} -le 60 ]; then
+      echo "  They agree (${diff} s) - nothing to do."
+    else
+      off=$(awk -v d="${diff#-}" 'BEGIN { if (d >= 86400) printf "%.0f days", d / 86400; else if (d >= 3600) printf "%.1f hours", d / 3600; else printf "%.0f minutes", d / 60 }')
+      [ "${sbs:0:4}" = 2000 ] && off="$off - it reset to 2000-01-01 at power-up"
+      echo "  The Starbook clock is off by $off. Its horizon check and GoTo pointing use this clock."
+      [ "$ntp" = yes ] || echo "  The Pi's clock is not internet-synced: check it (e.g. 'date') before copying it."
+      echo "  To set it from the Pi, run now, before 'unpark' (it only works on the startup screen):"
+      echo "    $0 settime"
+    fi
+    echo "Next: $0 unpark, then $0 star NAME" ;;
   abort)
     flip_stop
     set_ 'TELESCOPE_ABORT_MOTION.ABORT=On' 2>/dev/null
