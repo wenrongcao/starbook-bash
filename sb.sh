@@ -10,6 +10,7 @@
 #   sb.sh goto RA DEC      slew; RA hh:mm:ss (hours), DEC decimal degrees, e.g. goto 00:42:44 +41.2692  (MOVES)
 #   sb.sh star NAME        slew to a star from stars.txt (e.g. Vega), watch it, auto-abort  (MOVES)
 #   sb.sh stars            list the stars in stars.txt
+#   sb.sh track [MIN]      keep tracking the last target; flip MIN min after the meridian  (MOVES)
 #   sb.sh nudge N|S|E|W SEC [SPEED]  short move to centre a star (1-8, default 3)  (MOVES)
 #   sb.sh align            last GoTo target is now centred -> add alignment star
 #   sb.sh zoom N           chart zoom 0 (closest) .. 8 (whole sky); also the manual-move speed
@@ -28,6 +29,7 @@ SB=http://169.254.1.1
 LOG=/tmp/indiserver-starbook.log
 NOTHOME=$HOME/starbook/.not_at_home   # set when the Starbook no longer knows the mount is at home
 STARS=${SB_STARS:-$(dirname "$SELF")/stars.txt}   # star list for "star NAME"; override with SB_STARS=file
+TARGET=$HOME/starbook/.target          # last GoTo target "RA_hours DEC_deg", used by "track"
 
 get() { indi_getprop -t 3 -1 "$DEV.$1" 2>/dev/null; }
 set_() { indi_setprop "$DEV.$1"; }
@@ -87,6 +89,15 @@ do_reset() {
   echo "$(st)  encoders ($xy1) -> ($xy2)"
   [ -n "$xy1" ] && [ "$xy1" = "$xy2" ] && { echo "INIT: motors stopped"; return 0; }
   echo "WARNING: encoders changed or no reply"; return 1
+}
+
+# Hour angle (hours, -12..12) of RA $1 (hours) now; site from the Starbook (GETPLACE: W119 49).
+hour_angle() {
+  awk -v t="$(date +%s)" -v ra="$1" 'BEGIN {
+    lon = -(119 + 49 / 60); d = t / 86400 + 2440587.5 - 2451545.0
+    lst = (18.697374558 + 24.06570982441908 * d + lon / 15) % 24
+    ha = lst - ra; if (ha > 12) ha -= 24; if (ha < -12) ha += 24
+    printf "%.4f\n", ha }'
 }
 
 # ---- Starbook screen in the terminal -------------------------------------------------
@@ -250,6 +261,7 @@ case "$1" in
       printf "RA=%02d+%02d.%d&DEC=%s%03d+%02d", rh, int(rm / 10), rm % 10, s, int(dm / 60), dm % 60 }')
     r=$(sbq "GOTORADEC?$q")
     echo "GOTORADEC?$q -> $r  (abort: $0 abort)"
+    [[ "$r" == OK* ]] && echo "$2 $3" >"$TARGET"
     [[ "$r" == OK* ]] ;;
   stars)
     # List the targets in the star file
@@ -271,6 +283,37 @@ case "$1" in
     [[ "$(st)" == *STATE=SCOPE* ]] || { echo "Starbook not in SCOPE mode - not slewing"; exit 1; }
     "$SELF" goto "$ra" "$dec" || { echo "Starbook rejected the GoTo - not slewing"; exit 1; }
     watch_slew ;;
+  track)
+    # Keep tracking the last GoTo target through the meridian without the "Telescope will REVERSE!!"
+    # prompt: the Starbook tracks ~21 min past the meridian and then stops and waits for Yes, which
+    # can't be answered over the LAN. So re-send the GoTo at MIN minutes past the meridian
+    # (default 5); the Starbook then flips by itself.   (MOVES)
+    flip=${2:-5}
+    [[ "$flip" =~ ^[0-9]+$ ]] && [ "$flip" -ge 1 ] && [ "$flip" -le 15 ] || { echo "usage: $0 track [MIN]   (flip MIN minutes after the meridian, 1-15, default 5)"; exit 1; }
+    [ -r "$TARGET" ] || { echo "no target yet - run '$0 star NAME' or '$0 goto RA DEC' first"; exit 1; }
+    read -r tra tdec <"$TARGET"
+    guard
+    [[ "$(st)" == *STATE=SCOPE* || "$(st)" == *STATE=CHART* ]] || { echo "Starbook is not tracking ($(st)) - GoTo the target first"; exit 1; }
+    echo "tracking RA $tra h, DEC $tdec deg; flip $flip min after the meridian (Ctrl-C to stop watching)"
+    flipped=0
+    ha=$(hour_angle "$tra"); awk "BEGIN{exit !($ha > $flip / 60)}" && flipped=1   # already past: assume done
+    while :; do
+      s=$(st); ha=$(hour_angle "$tra")
+      if [ -z "$s" ]; then echo "$(date +%T) Starbook not answering"; sleep 30; continue; fi
+      printf '%s  HA %+.1f min  %s\n' "$(date +%T)" "$(awk "BEGIN{print $ha * 60}")" "$s"
+      case "$s" in
+        *STATE=USER*) printf '\a'; echo "  !! the Starbook is showing a prompt (e.g. 'Telescope will REVERSE!!') - press Yes on the Starbook" ;;
+        *STATE=INIT*) echo "  Starbook restarted (power?) - position lost, stopping"; echo "restart during track $(date +%T)" >"$NOTHOME"; exit 2 ;;
+      esac
+      if [ $flipped = 0 ] && [[ $s == *GOTO=0*STATE=SCOPE* || $s == *GOTO=0*STATE=CHART* ]] && awk "BEGIN{exit !($ha >= $flip / 60)}"; then
+        echo "  target is $flip min past the meridian - re-sending the GoTo so the Starbook flips"
+        read -r x0 _ <<<"$(xy)"
+        "$SELF" goto "$tra" "$tdec" && watch_slew && flipped=1
+        read -r x1 _ <<<"$(xy)"
+        [ $flipped = 1 ] && echo "  RA axis moved $(( x1 - x0 )) counts ($(awk "BEGIN{printf \"%.0f\", ($x1 - $x0) / 24000}") deg)"
+      fi
+      sleep 30
+    done ;;
   nudge)
     # Short manual move to centre a star: nudge N|S|E|W SECONDS [SPEED 1-8, default 3]   (MOVES)
     dir=$(echo "$2" | tr a-z A-Z); secs=$3; speed=${4:-3}
@@ -325,5 +368,5 @@ case "$1" in
   indi-stop)
     set_ 'CONNECTION.DISCONNECT=On' 2>/dev/null; sleep 1; pkill -x indiserver; echo "indiserver stopped" ;;
   *)
-    sed -n '2,22p' "$SELF" | sed 's/^# \{0,1\}//' ;;
+    sed -n '2,23p' "$SELF" | sed 's/^# \{0,1\}//' ;;
 esac
