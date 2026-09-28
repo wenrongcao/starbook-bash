@@ -6,6 +6,9 @@
 #   RA_low <= RA < RA_up  and  DEC >= DEC_low.
 #
 # Names:      = ABBR Full name
+# Centres:    c ABBR RA(J2000 h:m:s) DEC(J2000 deg)   - for "sb.sh goto Lyr" / "goto Lyra"
+#   Computed from these boundaries: centre of area (mean direction of an equal-area 0.2 deg grid),
+#   precessed from B1875.0 to J2000. Serpens has two parts: Ser1 = Serpens Caput, Ser2 = Serpens Cauda.
 # Boundaries:   RA_low(h) RA_up(h) DEC_low(deg) ABBR
 = And Andromeda
 = Ant Antlia
@@ -95,6 +98,98 @@
 = Vir Virgo
 = Vol Volans
 = Vul Vulpecula
+= Ser1 Serpens Caput
+= Ser2 Serpens Cauda
+
+c And   00:40:13.4  +40.4666   # area 722 sq deg
+c Ant   10:07:56.7  -34.0636   # area 239 sq deg
+c Aps   16:15:01.5  -76.0690   # area 206 sq deg
+c Aql   19:38:52.1   +2.1282   # area 652 sq deg
+c Aqr   22:24:04.0  -10.4963   # area 983 sq deg
+c Ara   17:20:07.5  -54.3294   # area 235 sq deg
+c Ari   02:39:32.4  +20.1158   # area 438 sq deg
+c Aur   05:56:27.2  +41.0467   # area 659 sq deg
+c Boo   14:35:39.8  +29.2780   # area 905 sq deg
+c CMa   06:49:49.4  -21.9456   # area 380 sq deg
+c CMi   07:37:46.4   +5.8664   # area 183 sq deg
+c CVn   13:09:31.5  +40.3220   # area 466 sq deg
+c Cae   04:45:11.5  -38.0645   # area 125 sq deg
+c Cam   05:41:04.3  +70.7558   # area 758 sq deg
+c Cap   21:01:27.9  -18.7634   # area 415 sq deg
+c Car   08:46:19.9  -63.0953   # area 491 sq deg
+c Cas   01:01:21.1  +62.5505   # area 599 sq deg
+c Cen   13:05:44.3  -46.1460   # area 1058 sq deg
+c Cep   22:19:17.0  +72.0805   # area 589 sq deg
+c Cet   01:37:42.2   -8.9975   # area 1236 sq deg
+c Cha   10:41:17.1  -80.1602   # area 133 sq deg
+c Cir   14:49:03.0  -63.2315   # area 93 sq deg
+c Cnc   08:40:53.3  +19.2445   # area 504 sq deg
+c Col   05:47:18.0  -35.5914   # area 271 sq deg
+c Com   12:45:08.4  +22.3689   # area 386 sq deg
+c CrA   18:38:47.3  -41.2459   # area 129 sq deg
+c CrB   15:53:03.0  +32.1727   # area 179 sq deg
+c Crt   11:24:26.5  -15.7418   # area 284 sq deg
+c Cru   12:26:52.9  -60.0633   # area 68 sq deg
+c Crv   12:25:27.1  -18.1777   # area 185 sq deg
+c Cyg   20:36:59.5  +43.0612   # area 804 sq deg
+c Del   20:40:44.8  +12.1256   # area 188 sq deg
+c Dor   05:01:33.3  -61.3289   # area 179 sq deg
+c Dra   16:57:13.5  +68.1173   # area 1089 sq deg
+c Equ   21:12:04.3   +7.4433   # area 71 sq deg
+c Eri   03:48:04.2  -21.0332   # area 1137 sq deg
+c For   02:46:04.1  -31.5332   # area 397 sq deg
+c Gem   07:09:06.0  +23.3698   # area 513 sq deg
+c Gru   22:31:24.1  -45.2427   # area 366 sq deg
+c Her   17:17:51.8  +28.5659   # area 1222 sq deg
+c Hor   03:18:03.3  -53.3338   # area 250 sq deg
+c Hya   10:26:16.9  -18.9817   # area 1303 sq deg
+c Hyi   02:22:19.9  -71.6652   # area 242 sq deg
+c Ind   21:28:50.4  -58.5106   # area 292 sq deg
+c LMi   10:21:34.4  +33.4660   # area 235 sq deg
+c Lac   22:29:37.3  +45.0992   # area 201 sq deg
+c Leo   10:42:09.1  +15.0394   # area 945 sq deg
+c Lep   05:34:31.5  -19.0589   # area 289 sq deg
+c Lib   15:13:29.9  -15.2870   # area 541 sq deg
+c Lup   15:18:49.0  -42.4682   # area 332 sq deg
+c Lyn   08:05:15.2  +46.7277   # area 548 sq deg
+c Lyr   18:50:46.7  +36.5558   # area 286 sq deg
+c Men   05:28:56.3  -77.5156   # area 154 sq deg
+c Mic   20:57:53.0  -36.0604   # area 211 sq deg
+c Mon   07:01:07.3   -2.7057   # area 481 sq deg
+c Mus   12:34:13.4  -70.0632   # area 138 sq deg
+c Nor   16:04:46.3  -51.6269   # area 165 sq deg
+c Oct   21:15:16.2  -84.4570   # area 289 sq deg
+c Oph   17:18:15.2   -5.2310   # area 950 sq deg
+c Ori   05:35:35.8   +5.1419   # area 593 sq deg
+c Pav   19:34:05.1  -65.6140   # area 378 sq deg
+c Peg   22:41:47.7  +19.4564   # area 1121 sq deg
+c Per   03:32:26.3  +44.3926   # area 615 sq deg
+c Phe   00:46:58.7  -47.8719   # area 471 sq deg
+c Pic   05:34:35.9  -52.5308   # area 246 sq deg
+c PsA   22:17:09.2  -30.7647   # area 243 sq deg
+c Psc   00:38:22.5  +10.9834   # area 888 sq deg
+c Pup   07:39:36.2  -33.2829   # area 675 sq deg
+c Pyx   08:54:34.3  -28.4724   # area 221 sq deg
+c Ret   03:53:30.9  -60.8916   # area 114 sq deg
+c Scl   00:27:49.7  -32.2811   # area 471 sq deg
+c Sco   16:45:29.8  -32.2075   # area 498 sq deg
+c Sct   18:40:21.6   -9.8660   # area 109 sq deg
+c Ser1  15:41:41.8   +9.9359   # area 428 sq deg
+c Ser2  18:09:43.8   -6.3724   # area 208 sq deg
+c Sex   10:16:22.0   -2.6148   # area 313 sq deg
+c Sge   19:42:34.7  +18.7270   # area 79 sq deg
+c Sgr   19:10:13.7  -27.5328   # area 869 sq deg
+c Tau   04:24:38.7  +17.0445   # area 796 sq deg
+c Tel   19:19:37.9  -51.2783   # area 249 sq deg
+c TrA   16:03:47.9  -65.8411   # area 110 sq deg
+c Tri   02:08:18.6  +32.1566   # area 133 sq deg
+c Tuc   23:50:05.6  -64.6464   # area 294 sq deg
+c UMa   11:02:21.4  +54.3708   # area 1278 sq deg
+c UMi   15:02:17.5  +76.6998   # area 256 sq deg
+c Vel   09:36:36.8  -48.1316   # area 500 sq deg
+c Vir   13:17:18.7   -2.6798   # area 1294 sq deg
+c Vol   07:48:21.6  -69.6742   # area 141 sq deg
+c Vul   20:17:28.2  +24.8292   # area 269 sq deg
 
   0.0000 24.0000  88.0000 UMi
   8.0000 14.5000  86.5000 UMi

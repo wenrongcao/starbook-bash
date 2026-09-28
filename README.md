@@ -93,7 +93,7 @@ Run `bash sb.sh` with no arguments to print this list.
 | `status` | Show state (INIT/SCOPE/CHART/USER, and "slewing" during a GoTo), RA/Dec, altitude and azimuth (computed on the Pi from RA/Dec, clock and site; azimuth from north, with the Starbook screen's from-south value alongside), the constellation it points at, encoder counts, the Starbook's clock next to the Pi's, firmware, the not-at-home flag, and whether INDI is running. Also the meridian flip: setting, current target and its distance from the meridian, whether the watcher is running with a countdown and the clock time of the flip, and the last flip result |
 | `settime` | Set the Starbook's clock from the Pi. Only works in INIT (the startup screen), so run it after `init` and before `unpark`. Make sure the Pi's own clock is right first (`date`), e.g. if it has no internet |
 | `init [-y]` | Start clean: stop INDI and any meridian watcher, wait for the Starbook, reset it to INIT (both motors stop), clear the not-at-home flag. Asks you to confirm the mount is at home; `-y` skips the question. Does **not** change the clock: it prints the Starbook's and the Pi's clocks (and whether the Pi is internet-synced) and reminds you to run `settime` if they differ |
-| `objects [TEXT]` | List the targets in `sky_objects.txt` with their notes; TEXT filters names and notes, e.g. `objects galaxy`, `objects Orion`, `objects M4` |
+| `objects [TEXT]` | List the targets in `sky_objects.txt` and the 88 constellation centres, with notes; TEXT filters names and notes, e.g. `objects galaxy`, `objects Orion`, `objects M4`, `objects constellation` |
 | `homed` | Confirm the mount is at home after moving it there by hand (clears the not-at-home flag) |
 | `unpark` | Leave INIT and enter Scope mode (`START`), then set chart zoom 6. The RA motor starts tracking; nothing slews. Assumes the mount is at home |
 | `zoom N` | Set the Starbook's chart zoom: 0 (closest) to 8 (whole sky), 6 is normal. The same setting is the speed of manual moves (`nudge` changes it). No motion |
@@ -104,7 +104,7 @@ Run `bash sb.sh` with no arguments to print this list.
 
 | Command | What it does |
 |---|---|
-| `goto NAME` / `goto RA DEC` | Slew to a named object from `sky_objects.txt` (`goto Vega`, `goto M4`; case-insensitive) or to coordinates: RA in hours as `hh:mm:ss`, Dec in decimal degrees (`goto 00:42:44 +41.2692`). Unparks if needed, watches the slew until it arrives (aborts after 180 s; says so if already on target) and arms the automatic meridian flip (see `meridian`) |
+| `goto NAME` / `goto RA DEC` | Slew to a named object from `sky_objects.txt` (`goto Vega`, `goto M4`; case-insensitive), to the centre of a constellation (`goto Lyr`, `goto Lyra`, `goto Ursa_Major`), or to coordinates: RA in hours as `hh:mm:ss`, Dec in decimal degrees (`goto 00:42:44 +41.2692`). Unparks if needed, watches the slew until it arrives (aborts after 180 s; says so if already on target) and arms the automatic meridian flip (see `meridian`) |
 | `meridian [on\|off\|MIN]` | Automatic meridian flip for `goto`: `on` (default) re-sends the GoTo MIN minutes after the target crosses the meridian (default 5, 1-15), from a background watcher that logs to `meridian.log`; `off` leaves the flip to you (press Yes on the Starbook). No argument shows the setting and any running watcher. No motion by itself |
 | `nudge N\|S\|E\|W SEC [SPEED]` | Short manual move to centre a star: up to 10 s, speed 1-8 (default 3) |
 | `park` | Slew to the home position and watch the slew. Tracking continues at home; follow with `init` to stop the motors |
@@ -151,6 +151,12 @@ boundaries (Delporte 1930) as 357 RA/Dec boxes for equinox B1875.0, from N. G. R
 ([CDS catalogue VI/42](https://cdsarc.cds.unistra.fr/viz-bin/cat/VI/42)), plus the 88 names.
 The script precesses the position to B1875.0 in awk (IAU 1976 precession) and takes the first box
 that contains it.
+
+`goto Lyr` (or `goto Lyra`, `goto Ursa_Major`) slews to the centre of a constellation. The centres are
+in the same file, computed from these boundaries: the centre of area of each constellation (mean
+direction of an equal-area 0.2° grid; the resulting areas match the IAU values, e.g. Ursa Major 1278 deg²,
+Lyra 286 deg², total 41253 deg²), precessed to J2000, and each checked to lie inside its constellation.
+Serpens has two parts: `goto Ser` / `goto Serpens` goes to Serpens Caput, `goto Serpens_Cauda` to Cauda.
 
 **Typical session**
 

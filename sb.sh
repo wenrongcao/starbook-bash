@@ -7,9 +7,10 @@
 #   sb.sh settime          set Starbook clock from the Pi (Starbook must be at INIT screen)
 #   sb.sh homed            confirm the mount is at home (after a power cut during a slew)
 #   sb.sh unpark           leave INIT/park and enter Scope mode        (no motion)
-#   sb.sh goto NAME|RA DEC slew to an object from sky_objects.txt (goto Vega, goto M4) or to
+#   sb.sh goto NAME|RA DEC slew to an object from sky_objects.txt (goto Vega, goto M4), a
+#                          constellation centre (goto Lyr, goto Ursa_Major), or to
 #                          coordinates (goto 00:42:44 +41.2692); watched; auto meridian flip  (MOVES)
-#   sb.sh objects [TEXT]   list sky_objects.txt (173 stars to mag 3, all Messier); TEXT filters
+#   sb.sh objects [TEXT]   list objects (173 stars to mag 3, all Messier, 88 constellations); TEXT filters
 #   sb.sh meridian [on|off|MIN]  auto meridian flip after goto: on (default), off, or MIN after (default 5)
 #   sb.sh nudge N|S|E|W SEC [SPEED]  short move to centre a star (1-8, default 3)  (MOVES)
 #   sb.sh align            last GoTo target is now centred -> add alignment star
@@ -178,6 +179,20 @@ meridian_status() {   # meridian-flip lines for "status"
   fi
   [ -r "$FLIPLOG" ] && grep -qE 'flip done|FLIP FAILED' "$FLIPLOG" && echo "  last:    $(grep -E 'flip done|FLIP FAILED' "$FLIPLOG" | tail -1)"
   return 0
+}
+
+# Centre of a constellation by abbreviation or full name (Lyr, Lyra, UMa, Ursa_Major; any case).
+# Serpens: Ser / Serpens = Serpens Caput (Ser1); Serpens_Cauda = Ser2. Prints "RA DEC Full name".
+const_centre() {
+  [ -r "$CONST" ] || return 1
+  awk -v q="$1" '
+    BEGIN { q = tolower(q); gsub(/ /, "_", q); if (q == "ser" || q == "serpens") q = "ser1" }
+    { sub(/\r$/, "") }
+    /^= / { ab = $2; $1 = ""; $2 = ""; sub(/^  */, ""); full[ab] = $0; next }
+    /^c / { cra[$2] = $3; cdec[$2] = $4 }
+    END { for (ab in cra) { f = tolower(full[ab]); gsub(/ /, "_", f)
+            if (q == tolower(ab) || q == f) { print cra[ab], cdec[ab], full[ab]; found = 1; exit } }
+          exit !found }' "$CONST"
 }
 
 # Constellation containing RA $1 (hours) / DEC $2 (degrees) of date: precess to B1875.0
@@ -378,8 +393,13 @@ case "$1" in
     if [ $# -eq 2 ]; then
       [ -r "$OBJECTS" ] || { echo "object file not found: $OBJECTS"; exit 1; }
       radec=$(awk -v n="$2" '{ sub(/\r$/, "") } !/^[[:space:]]*(#|$)/ && tolower($1) == tolower(n) { print $2, $3; exit }' "$OBJECTS")
-      [ -n "$radec" ] || { echo "unknown object: $2 (not in $OBJECTS - see '$0 objects')"; exit 1; }
-      read -r ra_s dec_s <<<"$radec"; label="$2"
+      if [ -n "$radec" ]; then
+        read -r ra_s dec_s <<<"$radec"; label="$2"
+      elif cc=$(const_centre "$2"); then                     # not an object: a constellation?
+        read -r ra_s dec_s cname <<<"$cc"; label="$2 (centre of $cname)"
+      else
+        echo "unknown object: $2 (not in $OBJECTS or a constellation - see '$0 objects')"; exit 1
+      fi
     elif [ $# -eq 3 ]; then
       ra_s=$2; dec_s=$3; label="target"
     else
@@ -401,7 +421,15 @@ case "$1" in
     awk -v q="$2" '{ sub(/\r$/, "") } !/^[[:space:]]*(#|$)/ && (q == "" || index(tolower($0), tolower(q))) {
         c = ""; if ((k = index($0, "#")) > 0) c = substr($0, k + 1); sub(/^ */, "", c)
         printf "  %-18s RA %-11s DEC %+9.4f  %s\n", $1, $2, $3, c; n++ }
-      END { printf "%d object(s)%s in %s\n", n, (q == "" ? "" : " matching \"" q "\""), FILENAME }' "$OBJECTS" ;;
+      END { printf "%d object(s)%s in %s\n", n, (q == "" ? "" : " matching \"" q "\""), FILENAME }' "$OBJECTS"
+    # constellation centres ("goto Lyr" / "goto Lyra")
+    awk -v q="$2" '{ sub(/\r$/, "") }
+      /^= / { ab = $2; $1 = ""; $2 = ""; sub(/^  */, ""); full[ab] = $0; next }
+      /^c / { k = index($0, "#"); c = substr($0, k + 2)
+              if (q == "" || index(tolower($2 " " full[$2] " constellation"), tolower(q))) {
+                if (!n++) print "constellation centres (goto ABBR or full name):"
+                printf "  %-18s RA %-11s DEC %+9.4f  %s, %s\n", $2, $3, $4, full[$2], c } }
+      END { if (n) printf "%d constellation(s)%s in %s\n", n, (q == "" ? "" : " matching \"" q "\""), FILENAME }' "$CONST" ;;
   meridian)
     # Automatic meridian flip for GoTo targets: meridian [on|off|MIN]
     read -r m n <<<"$(meridian_get)"
@@ -513,5 +541,5 @@ case "$1" in
   indi-stop)
     set_ 'CONNECTION.DISCONNECT=On' 2>/dev/null; sleep 1; pkill -x indiserver; echo "indiserver stopped" ;;
   *)
-    sed -n '2,22p' "$SELF" | sed 's/^# \{0,1\}//' ;;
+    sed -n '2,23p' "$SELF" | sed 's/^# \{0,1\}//' ;;
 esac
