@@ -277,7 +277,7 @@ case "$1" in
     echo "RA:       $ra"
     echo "DEC:      $dec"
     # Alt/Az aren't in GETSTATUS: compute them from RA/Dec, the Pi's clock and the site (N39 28, W119 49).
-    # Azimuth from north (N 0, E 90, S 180, W 270); the Starbook screen counts from south.
+    # Azimuth from north (N 0, E 90, S 180, W 270). Note: the Starbook screen counts from south (S 0, W 90).
     echo "$s" | awk -v t="$(date +%s)" '{
       match($0, /RA=[0-9]+\+[0-9.]+/);  split(substr($0, RSTART + 3, RLENGTH - 3), r, "+")
       match($0, /DEC=-?[0-9]+\+[0-9]+/); dd = substr($0, RSTART + 4, RLENGTH - 4); split(dd, d, "+")
@@ -287,9 +287,8 @@ case "$1" in
       ha = (lst - ra) * 15 * k; de = dec * k; la = lat * k
       x = sin(la) * sin(de) + cos(la) * cos(de) * cos(ha); alt = atan2(x, sqrt(1 - x * x)) / k
       az = atan2(-cos(de) * sin(ha), sin(de) * cos(la) - cos(de) * sin(la) * cos(ha)) / k; if (az < 0) az += 360
-      s = az - 180; if (s < 0) s += 360
       printf "ALT:      %.1f deg%s\n", alt, (alt < 0 ? "  (below the horizon)" : "")
-      printf "AZ:       %.1f deg from north  (Starbook screen, from south: %.1f)\n", az, s }'
+      printf "AZ:       %.1f deg  (from north: N 0, E 90, S 180, W 270)\n", az }'
     echo "encoders: $(sbq GETXY.ASP)"
     echo "clock:    $(sbq GETTIME.ASP)   (Pi: $(TZ=Etc/GMT+7 date '+%Y %-m %-d %-H %-M %-S'))"
     echo "firmware: $(sbq VERSION.ASP | sed 's/version=//')"
