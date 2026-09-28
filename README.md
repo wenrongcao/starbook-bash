@@ -90,7 +90,7 @@ Run `bash sb.sh` with no arguments to print this list.
 
 | Command | What it does |
 |---|---|
-| `status` | Show state (INIT/SCOPE/CHART/USER, and "slewing" during a GoTo), RA/Dec, encoder counts, the Starbook's clock next to the Pi's, firmware, the not-at-home flag, and whether INDI is running. Also the meridian flip: setting, current target and its distance from the meridian, whether the watcher is running with a countdown and the clock time of the flip, and the last flip result |
+| `status` | Show state (INIT/SCOPE/CHART/USER, and "slewing" during a GoTo), RA/Dec, altitude and azimuth (computed on the Pi from RA/Dec, clock and site; azimuth from north, with the Starbook screen's from-south value alongside), encoder counts, the Starbook's clock next to the Pi's, firmware, the not-at-home flag, and whether INDI is running. Also the meridian flip: setting, current target and its distance from the meridian, whether the watcher is running with a countdown and the clock time of the flip, and the last flip result |
 | `settime` | Set the Starbook's clock from the Pi. Only works in INIT (the startup screen), so run it after `init` and before `unpark`. Make sure the Pi's own clock is right first (`date`), e.g. if it has no internet |
 | `init [-y]` | Start clean: stop INDI and any meridian watcher, wait for the Starbook, reset it to INIT (both motors stop), clear the not-at-home flag. Asks you to confirm the mount is at home; `-y` skips the question. Does **not** change the clock: it prints the Starbook's and the Pi's clocks (and whether the Pi is internet-synced) and reminds you to run `settime` if they differ |
 | `stars` | List the targets in `stars.txt` |
@@ -162,6 +162,8 @@ bash sb.sh init           # at home again: both motors stop
   The Starbook refuses GoTos below its horizon (`ERROR:BELOW HORIZONE`), but that check uses its own
   clock, so after every power-up check it (`sb.sh init` prints it) and run `sb.sh settime` if needed.
 - `ALIGN` ignores coordinates and only syncs to the last GoTo target.
+- `GETSTATUS` reports RA/Dec only. The Starbook screen shows Alt/Az too, with azimuth counted from
+  south (S 0°, W 90°); `sb.sh status` computes Alt/Az itself and prints azimuth from north.
 - **Meridian:** the Starbook tracks about 21 min past the meridian, then stops tracking and shows
   "Telescope will REVERSE!!" (Yes/No). While that prompt is up it refuses every LAN command
   (`ERROR:ILLEGAL STATE`), so it can't be answered remotely. A GoTo sent after the meridian but before

@@ -3,7 +3,7 @@
 # Link: Pi -> TP-Link USB-LAN (enx6c5ab0b3b739, 169.254.1.2/16) -> Starbook 169.254.1.1
 #
 #   sb.sh indi-start       start the INDI server + Starbook driver (only for KStars/Ekos/PHD2)
-#   sb.sh status           show state, RA/Dec, encoders, clock, firmware, meridian flip
+#   sb.sh status           show state, RA/Dec, Alt/Az, encoders, clock, firmware, meridian flip
 #   sb.sh settime          set Starbook clock from the Pi (Starbook must be at INIT screen)
 #   sb.sh homed            confirm the mount is at home (after a power cut during a slew)
 #   sb.sh unpark           leave INIT/park and enter Scope mode        (no motion)
@@ -276,6 +276,20 @@ case "$1" in
     echo "state:    $(echo "$s" | sed -E 's/.*STATE=([A-Z]+).*/\1/')$(echo "$s" | grep -q 'GOTO=1' && echo '  (slewing)')"
     echo "RA:       $ra"
     echo "DEC:      $dec"
+    # Alt/Az aren't in GETSTATUS: compute them from RA/Dec, the Pi's clock and the site (N39 28, W119 49).
+    # Azimuth from north (N 0, E 90, S 180, W 270); the Starbook screen counts from south.
+    echo "$s" | awk -v t="$(date +%s)" '{
+      match($0, /RA=[0-9]+\+[0-9.]+/);  split(substr($0, RSTART + 3, RLENGTH - 3), r, "+")
+      match($0, /DEC=-?[0-9]+\+[0-9]+/); dd = substr($0, RSTART + 4, RLENGTH - 4); split(dd, d, "+")
+      ra = r[1] + r[2] / 60; dec = (dd ~ /^-/ ? -1 : 1) * ((d[1] < 0 ? -d[1] : d[1]) + d[2] / 60)
+      pi = atan2(0, -1); k = pi / 180; lat = 39 + 28 / 60; lon = -(119 + 49 / 60)
+      j = t / 86400 + 2440587.5 - 2451545.0; lst = (18.697374558 + 24.06570982441908 * j + lon / 15) % 24
+      ha = (lst - ra) * 15 * k; de = dec * k; la = lat * k
+      x = sin(la) * sin(de) + cos(la) * cos(de) * cos(ha); alt = atan2(x, sqrt(1 - x * x)) / k
+      az = atan2(-cos(de) * sin(ha), sin(de) * cos(la) - cos(de) * sin(la) * cos(ha)) / k; if (az < 0) az += 360
+      s = az - 180; if (s < 0) s += 360
+      printf "ALT:      %.1f deg%s\n", alt, (alt < 0 ? "  (below the horizon)" : "")
+      printf "AZ:       %.1f deg from north  (Starbook screen, from south: %.1f)\n", az, s }'
     echo "encoders: $(sbq GETXY.ASP)"
     echo "clock:    $(sbq GETTIME.ASP)   (Pi: $(TZ=Etc/GMT+7 date '+%Y %-m %-d %-H %-M %-S'))"
     echo "firmware: $(sbq VERSION.ASP | sed 's/version=//')"
