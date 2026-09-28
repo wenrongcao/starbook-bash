@@ -5,7 +5,7 @@
 #   sb.sh indi-start       start the INDI server + Starbook driver (only for KStars/Ekos/PHD2)
 #   sb.sh status           show state, RA/Dec, encoders, clock, firmware
 #   sb.sh settime          set Starbook clock from the Pi (Starbook must be at INIT screen)
-#   sb.sh homed            confirm the mount is at home (after init away from home, or a power cut)
+#   sb.sh homed            confirm the mount is at home (after a power cut during a slew)
 #   sb.sh unpark           leave INIT/park and enter Scope mode        (no motion)
 #   sb.sh goto RA DEC      slew; RA hh:mm:ss (hours), DEC decimal degrees, e.g. goto 00:42:44 +41.2692  (MOVES)
 #   sb.sh star NAME        slew to a star from stars.txt, watch it, auto-abort; auto meridian flip  (MOVES)
@@ -14,8 +14,7 @@
 #   sb.sh nudge N|S|E|W SEC [SPEED]  short move to centre a star (1-8, default 3)  (MOVES)
 #   sb.sh align            last GoTo target is now centred -> add alignment star
 #   sb.sh zoom N           chart zoom 0 (closest) .. 8 (whole sky); also the manual-move speed
-#   sb.sh init             reset to INIT where it is: both motors stop     (no motion)
-#   sb.sh reset [-y]       reset everything: INDI off, INIT, clock set, not-at-home flag cleared (mount must be home)
+#   sb.sh init [-y]        start clean: INIT (motors stop), clock set, flags cleared; mount must be home
 #   sb.sh screen [COLS]    show the Starbook screen in the terminal (24-bit colour)
 #   sb.sh watch [SEC]      redraw the Starbook screen every SEC seconds (default 5), Ctrl-C quits
 #   sb.sh abort            stop all motion
@@ -113,7 +112,7 @@ meridian_get() {   # prints "on|off MIN"
   [[ "$m" == on || "$m" == off ]] || m=on; [[ "$n" =~ ^[0-9]+$ ]] || n=5
   echo "$m $n"
 }
-flip_stop() {   # stop a running watcher (new target, park, init, reset, abort)
+flip_stop() {   # stop a running watcher (new target, park, init, abort)
   local pid; [ -r "$FLIPPID" ] && read -r pid <"$FLIPPID"
   [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && kill "$pid" 2>/dev/null && echo "meridian flip watcher stopped"
   rm -f "$FLIPPID"
@@ -373,26 +372,11 @@ case "$1" in
     # Tell the Starbook the last GoTo target is now centred (adds an alignment star).
     r=$(sbq ALIGN); echo "ALIGN -> $r"; [ "$r" = OK ] ;;
   init)
-    # RESET the Starbook to its INIT screen where the mount is now: both motors stop (no motion).
-    # INIT forgets the position. If the mount is not at home (encoders > 1 deg from home),
-    # unpark/goto are blocked until it is moved home by hand and "homed" is run.
-    flip_stop
-    [[ "$(st)" == *STATE=INIT* ]] && { echo "already in INIT"; exit 0; }
-    read -r x y <<<"$(xy)"
-    [ -n "$x" ] || { echo "could not read encoders - not resetting"; exit 1; }
-    if [ ${x#-} -gt 24000 ] || [ ${y#-} -gt 24000 ]; then
-      echo "not at home (X=$x Y=$y counts from home) - after INIT move it home by hand, then: $0 homed"
-      echo "init away from home at $(date +%T), encoders X=$x Y=$y" >"$NOTHOME"
-    else
-      echo "at home (X=$x Y=$y, within 1 deg)"
-    fi
-    do_reset ;;
-  reset)
-    # Reset everything to a clean start: stop INDI, Starbook to INIT (motors stop),
+    # Start clean: stop INDI and any meridian watcher, Starbook to INIT (both motors stop),
     # clock from the Pi, clear the not-at-home flag. The mount must be at home.
     if [ "$2" != -y ]; then
       read -r -p "Is the mount physically at home (counterweight down, tube level)? [y/N] " a
-      [[ "$a" == [yY]* ]] || { echo "not reset - move the mount home by hand first"; exit 1; }
+      [[ "$a" == [yY]* ]] || { echo "not done - move the mount home by hand first"; exit 1; }
     fi
     flip_stop
     pkill -x indiserver && echo "indiserver stopped"
@@ -402,7 +386,7 @@ case "$1" in
     [[ "$(st)" == *STATE=INIT* ]] || do_reset || { echo "reset to INIT failed"; exit 1; }
     "$SELF" settime
     rm -f "$NOTHOME"
-    echo "reset done: $(st)  clock $(sbq GETTIME.ASP)" ;;
+    echo "init done: $(st)  clock $(sbq GETTIME.ASP)" ;;
   abort)
     flip_stop
     set_ 'TELESCOPE_ABORT_MOTION.ABORT=On' 2>/dev/null
@@ -416,5 +400,5 @@ case "$1" in
   indi-stop)
     set_ 'CONNECTION.DISCONNECT=On' 2>/dev/null; sleep 1; pkill -x indiserver; echo "indiserver stopped" ;;
   *)
-    sed -n '2,23p' "$SELF" | sed 's/^# \{0,1\}//' ;;
+    sed -n '2,22p' "$SELF" | sed 's/^# \{0,1\}//' ;;
 esac
